@@ -75,8 +75,28 @@ data class ImageGenerationParams(
     val prompt: String,
     val numOfImages: Int = 1,
     val aspectRatio: ImageAspectRatio = ImageAspectRatio.SQUARE,
+    /** 显式宽高, 非空时优先于 aspectRatio (NAI 等对尺寸有硬要求的接口) */
+    val width: Int? = null,
+    val height: Int? = null,
+    /** NAI 原生协议用的负向词 */
+    val negativePrompt: String? = null,
+    /** 参考图（NAI 下作为 vibe 使用，需要先 encode） */
+    val referenceImages: List<String> = emptyList(),
+    /** 已编码的 vibe（NAI 导出的 .naiv4vibe / .json），跳过 encode-vibe 直接用 */
+    val cachedVibes: List<CachedVibe> = emptyList(),
+    /** vibe 强度 0–1 */
+    val referenceStrength: Float = 0.6f,
+    /** NAI 专用参数，直接合并进 parameters 对象 */
+    val naiParameters: kotlinx.serialization.json.JsonObject? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
+)
+
+@Serializable
+data class CachedVibe(
+    val encoded: String,
+    val strength: Float = 0.6f,
+    val model: String = "",
 )
 
 @Serializable
@@ -86,6 +106,9 @@ data class ImageEditParams(
     val images: List<String>,
     val numOfImages: Int = 1,
     val aspectRatio: ImageAspectRatio = ImageAspectRatio.SQUARE,
+    /** 显式宽高, 非空时优先于 aspectRatio */
+    val width: Int? = null,
+    val height: Int? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
 )

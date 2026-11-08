@@ -17,6 +17,8 @@ import androidx.compose.ui.text.withStyle
 import me.rerere.ai.provider.BalanceOption
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ImageProtocol
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
@@ -292,5 +294,98 @@ val DEFAULT_PROVIDERS = listOf(
                 }
             )
         }
+    ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("3f7c9a52-6d1b-4e8a-9c2f-5b0d84a1e6c3"),
+        name = "OpenCode Go",
+        baseUrl = "https://opencode.ai/zen/go/v1",
+        apiKey = "",
+        enabled = true,
+        builtIn = true,
+        description = {
+            MarkdownBlock(
+                content = """
+                    OpenCode Go 订阅（$10/月）的 OpenAI 兼容入口，API Key 在 OpenCode Zen 控制台生成。
+                    多数模型走 `/chat/completions`；Qwen3.7 Max、MiniMax M3 等只提供 Anthropic `/messages`，需另建 Anthropic 类型提供商。
+                    模型列表：https://opencode.ai/zen/go/v1/models
+                """.trimIndent()
+            )
+        },
+        models = listOf(
+            Model(modelId = "glm-5.3", displayName = "GLM-5.3", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "glm-5.3-flash", displayName = "GLM-5.3 Flash", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "glm-5.2", displayName = "GLM-5.2", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "glm-5.1", displayName = "GLM-5.1", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "kimi-k3", displayName = "Kimi K3", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "kimi-k2.7-code", displayName = "Kimi K2.7 Code", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "kimi-k2.6", displayName = "Kimi K2.6", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "deepseek-v4-pro", displayName = "DeepSeek V4 Pro", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "deepseek-v4-flash", displayName = "DeepSeek V4 Flash", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(
+                modelId = "deepseek-v4-flash-vision-exp",
+                displayName = "DeepSeek V4 Flash Vision",
+                inputModalities = listOf(Modality.TEXT, Modality.IMAGE),
+                abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING),
+            ),
+            Model(modelId = "mimo-v2.5-pro", displayName = "MiMo V2.5 Pro", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "mimo-v2.5", displayName = "MiMo V2.5", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+            Model(modelId = "longcat-2.0", displayName = "LongCat 2.0", abilities = listOf(ModelAbility.TOOL, ModelAbility.REASONING)),
+        )
+    ),
+    // 生图走两家不同的中转站，所以拆成两个独立条目，各自填自己的 Base URL 与 Key
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("c1f4b2d8-6a3e-47f9-8b52-9d0e7c41a265"),
+        name = "生图 · GPT 中转",
+        baseUrl = "",
+        apiKey = "",
+        enabled = true,
+        builtIn = true,
+        description = {
+            MarkdownBlock(
+                content = """
+                    给 gpt-image / DALL·E 用的中转条目：填你 **gpt 那家**的 Base URL（通常 `/v1` 结尾）和 Key。
+                    模型 ID 按中转商文档改，默认 `gpt-image-1`。
+                    尺寸只支持 1024×1024、1536×1024、1024×1536，生图页会自动只给这三档。
+                """.trimIndent()
+            )
+        },
+        models = listOf(
+            Model(
+                modelId = "gpt-image-1",
+                displayName = "gpt-image-1",
+                type = ModelType.IMAGE,
+                inputModalities = listOf(Modality.TEXT),
+                outputModalities = listOf(Modality.IMAGE),
+            ),
+        )
+    ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("d3a7e5c9-2b84-4f16-a0c7-6e91b8d3524f"),
+        name = "生图 · NAI 中转",
+        baseUrl = "",
+        apiKey = "",
+        enabled = true,
+        builtIn = true,
+        imageProtocol = ImageProtocol.NOVELAI,
+        description = {
+            MarkdownBlock(
+                content = """
+                    给 NAI 系模型用的条目：填 **NAI 那家**的站点地址和 Key，跟 GPT 那家互不相干。
+                    协议已预设为「NovelAI 原生」，请求会发到 `{Base URL}/ai/generate-image`，
+                    所以 Base URL 只填站点根地址（如 `https://api.novelai.net`），不要带 `/v1`。
+                    模型 ID 按中转商文档改，默认 `nai-diffusion-4-5-full`。
+                    尺寸必须是 64 的倍数、总像素不超过 1.5MP，生图页会自动给出 NAI 常用档位。
+                """.trimIndent()
+            )
+        },
+        models = listOf(
+            Model(
+                modelId = "nai-diffusion-4-5-full",
+                displayName = "NAI Diffusion 4.5 Full",
+                type = ModelType.IMAGE,
+                inputModalities = listOf(Modality.TEXT),
+                outputModalities = listOf(Modality.IMAGE),
+            ),
+        )
     ),
 )

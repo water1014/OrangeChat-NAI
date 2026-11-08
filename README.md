@@ -368,6 +368,33 @@ AI 社交动态插件，使用 Supabase 作为后端存储，附带 `supabase_sc
 
 ---
 
+## 🤖 NAI 生图二改（本存档追加）
+
+本仓库在橘瓣原版基础上，重点增强了 **NovelAI（NAI）生图** 能力并修复插件可用性问题。
+
+| 项目 | 值 |
+| --- | --- |
+| 应用版本 | **2.7.3**（versionCode 176，包名 `me.rerere.orangechat.liquidglass`） |
+| 插件 `naigen` | **1.4.2**（`plugins/naigen/`，NAI-ImageGen-plugin） |
+
+### 主要改动
+
+- **NAI 原生 API 直连**：`OpenAIProvider` 补齐 NAI `/ai/generate-image` 所需参数（`params_version` v4=3、`stream`、`legacy_v3_extend`、`normalize_reference_strength_multiple`、`use_coords` 等）。
+- **采样器对齐柏宝绘**：sampler 为 `k_euler_ancestral` 时补 `prefer_brownian: true`、`deliberate_euler_ancestral_bug: false`。
+- **协议自适应（AUTO）**：优先 NAI 原生，404 回退 OpenAI 兼容；兼容模式按 `strictOpenAI` 控制字段，避免 400。
+- **加权 tag 修复**：插件 `limitArtistWeight` 改为**只压 `artist:` 前缀画师权重**，正向加权 tag（`3.5::3D::`、`2.5::realistic face…::`、`5::no text::`）原样保留。
+- **负面提示**：默认空，改用模型官方负面预设（ucPreset=3）。
+- **插件覆盖升级**：`PluginScanner.completeImport` 由「同 ID 拒绝」改为覆盖升级（旧目录备份回滚）。
+- **配置页下拉框可交互**：修复 `PluginDetailPage` / `PluginUIDeclarativePage` 中 `readOnly` 导致 Select 点不动。
+
+### NAI 插件约定（对齐柏宝绘 `src/backends/nai.ts`）
+
+- 加权 tag 语法：`权重::内容::`
+- vibe 以对象数组（`encodings["v4-5full"]["unknown"]["encoding"]`）传入，非裸 base64
+- 画师锚定用 `artist:zero_q_0q`（冒号）；构图建议以 `1girl` / `1boy` 开头
+
+---
+
 <div align="center">
 
 **🍊 橘瓣 OrangeChat · 让 AI 不止活在对话框里**

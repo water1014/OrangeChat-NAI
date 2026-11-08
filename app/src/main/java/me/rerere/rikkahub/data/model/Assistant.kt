@@ -41,7 +41,11 @@ data class Assistant(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
-    val localTools: List<LocalToolOption> = listOf(LocalToolOption.TimeInfo),
+    val localTools: List<LocalToolOption> = listOf(
+        LocalToolOption.TimeInfo,
+        // 新助手默认带上生图工具：用户给关键词，AI 扩写提示词后出图（每次调用仍需确认）
+        LocalToolOption.ImageGeneration,
+    ),
     val workspaceId: Uuid? = null,
     val background: String? = null,
     val backgroundOpacity: Float = 1.0f,

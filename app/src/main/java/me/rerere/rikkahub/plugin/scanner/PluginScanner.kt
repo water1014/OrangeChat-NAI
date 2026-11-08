@@ -56,7 +56,7 @@ class PluginScanner(
             return emptyList()
         }
 
-        return dir.listFiles { file -> file.isDirectory }
+        return dir.listFiles { file -> file.isDirectory && !file.name.startsWith(".") }
             ?.mapNotNull { pluginDir -> loadPluginInfo(pluginDir) }
             ?: emptyList()
     }
@@ -155,11 +155,8 @@ class PluginScanner(
      */
     suspend fun completeImport(manifest: PluginManifest, tempDir: File): Result<PluginInfo> {
         return try {
-            val existingPlugins = scanPlugins()
-            if (existingPlugins.any { it.manifest.id == manifest.id }) {
-                tempDir.deleteRecursively()
-                return Result.failure(IllegalArgumentException("插件 ${manifest.id} 已存在"))
-            }
+            // 同 ID 视为覆盖升级：保留原有配置与启用状态，由调用方决定是否重新加载
+            val existing = scanPlugins().firstOrNull { it.manifest.id == manifest.id }
 
             val manifestFile = findManifest(tempDir)
                 ?: run {
@@ -174,10 +171,29 @@ class PluginScanner(
             }
 
             val pluginDir = File(pluginsDir, manifest.id)
+            // 先把旧目录改名备份，写入失败时回滚，避免升级中途失败导致插件彻底丢失
+            var backupDir: File? = null
             if (pluginDir.exists()) {
-                pluginDir.deleteRecursively()
+                val bak = File(pluginsDir, ".old_${manifest.id}_${System.currentTimeMillis()}")
+                if (pluginDir.renameTo(bak)) {
+                    backupDir = bak
+                } else {
+                    pluginDir.deleteRecursively()
+                }
             }
-            manifestFile.parentFile?.copyRecursively(pluginDir, overwrite = true)
+
+            val copied = runCatching {
+                manifestFile.parentFile?.copyRecursively(pluginDir, overwrite = true)
+                    ?: throw IllegalStateException("复制插件文件失败")
+            }.isSuccess
+
+            if (!copied) {
+                pluginDir.deleteRecursively()
+                backupDir?.renameTo(pluginDir)
+                tempDir.deleteRecursively()
+                return Result.failure(IllegalStateException("写入插件目录失败，已回滚到旧版本"))
+            }
+            backupDir?.deleteRecursively()
             tempDir.deleteRecursively()
 
             // 写入完整性校验和
@@ -187,11 +203,16 @@ class PluginScanner(
             }
 
             loadPluginInfo(pluginDir)?.let {
+                val isUpgrade = existing != null
                 auditRepo?.log(
                     category = "plugin",
-                    action = "installed",
+                    action = if (isUpgrade) "upgraded" else "installed",
                     target = manifest.id,
-                    detail = "插件 ${manifest.name} (${manifest.id}) v${manifest.version} 已安装，作者: ${manifest.author}",
+                    detail = if (isUpgrade) {
+                        "插件 ${manifest.name} (${manifest.id}) v${existing?.manifest?.version ?: "?"} → v${manifest.version} 已覆盖升级，作者: ${manifest.author}"
+                    } else {
+                        "插件 ${manifest.name} (${manifest.id}) v${manifest.version} 已安装，作者: ${manifest.author}"
+                    },
                     status = "success",
                 )
                 Result.success(it)
@@ -227,14 +248,7 @@ class PluginScanner(
             val content = manifestFile.readText()
             val manifest = json.decodeFromString(PluginManifest.serializer(), content)
 
-            // 5. 检查ID是否重复
-            val existingPlugins = scanPlugins()
-            if (existingPlugins.any { it.manifest.id == manifest.id }) {
-                // 清理临时文件
-                tempFile.delete()
-                tempDir.deleteRecursively()
-                return Result.failure(IllegalArgumentException("插件 ${manifest.id} 已存在"))
-            }
+            // 5. 同 ID 视为覆盖升级，保留旧配置（配置存在 DataStore，不随目录删除丢失）
 
             // 6. 验证入口文件
             val entryFile = File(manifestFile.parentFile, manifest.entry)

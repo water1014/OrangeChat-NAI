@@ -151,13 +151,31 @@ class PluginManager(
      */
     suspend fun confirmImport(manifest: PluginManifest, tempDir: java.io.File): Result<PluginInfo> {
         return try {
+            val previous = _plugins.value.firstOrNull { it.manifest.id == manifest.id }
+            // 覆盖升级前先卸载旧沙箱，避免还持有旧 index.js 或未释放的文件句柄
+            if (previous != null) {
+                loader.unloadPlugin(manifest.id)
+            }
             val result = scanner.completeImport(manifest, tempDir)
             result.fold(
                 onSuccess = { pluginInfo ->
-                    repository.savePlugin(pluginInfo)
-                    loadPlugin(pluginInfo)
+                    // 覆盖升级时沿用旧的配置、启用状态和分组，不因为重装把用户设置清掉
+                    val savedConfig = repository.getPluginConfig(pluginInfo.manifest.id)
+                    val enabled = previous?.isEnabled ?: repository.isPluginEnabled(pluginInfo.manifest.id)
+                    val folderId = previous?.folderId
+                        ?: repository.getFolderAssignments()[pluginInfo.manifest.id]
+                    val merged = pluginInfo.copy(
+                        config = savedConfig,
+                        isEnabled = enabled,
+                        folderId = folderId,
+                        loadError = null,
+                    )
+                    repository.savePlugin(merged)
+                    if (enabled) {
+                        loadPlugin(merged)
+                    }
                     refreshPlugins()
-                    Result.success(pluginInfo)
+                    Result.success(merged)
                 },
                 onFailure = { error -> Result.failure(error) }
             )

@@ -53,6 +53,7 @@ import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Book03
 import me.rerere.hugeicons.stroke.Bookshelf01
 import me.rerere.hugeicons.stroke.Brain02
+import me.rerere.hugeicons.stroke.Colors
 import me.rerere.hugeicons.stroke.Clapping01
 import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.Developer
@@ -242,6 +243,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.Brain02, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_providers_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_providers)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingImageGen) },
+                        leadingContent = { Icon(HugeIcons.Colors, null) },
+                        supportingContent = { Text("渠道、默认尺寸、画师串、角色、vibe 与 NAI 参数；AI 生图也走这里") },
+                        headlineContent = { Text("生图设置") },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingSearch) },

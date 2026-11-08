@@ -1,0 +1,275 @@
+{
+  "id": "com.orangechat.naigen",
+  "name": "NAI 生图",
+  "description": "柏宝绘风格生图插件：角色档案 @替换、vibe 预设、完整采样参数、画师限权与素图排查",
+  "version": "1.4.2",
+  "author": "OrangeChat",
+  "icon": "🎨",
+  "entry": "index.js",
+  "allowedHosts": [
+    "*"
+  ],
+  "promptTemplate": "生图请优先调用插件工具 naigen__nai_generate（名称以实际注入为准）。它已经内置画师串、质量词、负面预设与渠道配置，你只需要写 Danbooru 风格的英文标签串：1girl/1boy 开头，逗号分隔，30-60 个 tag，覆盖外貌、服装、动作、场景、构图、光线；不要写画风、画师、质量词，也不要复述剧情。如果工具返回 400/401/404，把报错原文原样告诉用户，不要自己反复重试或改参数。",
+  "config": [
+    {
+      "name": "baseUrl",
+      "type": "string",
+      "label": "站点地址",
+      "description": "中转站点根地址。填不填 /v1 都行，插件会按协议自动纠正。例如 https://api.xxx.com",
+      "required": true,
+      "placeholder": "https://api.xxx.com"
+    },
+    {
+      "name": "apiKey",
+      "type": "password",
+      "label": "API Key",
+      "required": true
+    },
+    {
+      "name": "protocol",
+      "type": "select",
+      "label": "协议",
+      "default": "AUTO",
+      "options": [
+        {
+          "value": "AUTO",
+          "label": "自动（先 NAI 原生，404 回退兼容）"
+        },
+        {
+          "value": "NOVELAI",
+          "label": "NAI 原生"
+        },
+        {
+          "value": "OPENAI",
+          "label": "OpenAI 兼容"
+        }
+      ],
+      "description": "不确定就选自动：先按柏宝绘同款的 /ai/generate-image 打，站点不支持会自动改用 /images/generations"
+    },
+    {
+      "name": "model",
+      "type": "string",
+      "label": "模型 ID",
+      "default": "nai-diffusion-4-5-full",
+      "description": "按你中转商文档填，例如 nai-diffusion-4-5-full 或 gpt-image-1"
+    },
+    {
+      "name": "strictOpenAI",
+      "type": "boolean",
+      "label": "严格请求体",
+      "description": "开启后 OpenAI 兼容只发 model/prompt/n/size。报 400 Unrecognized request argument 时保持开启",
+      "default": true
+    },
+    {
+      "name": "artist",
+      "type": "string",
+      "label": "画师串",
+      "description": "拼在提示词最前，例如 2:artist:wlop。多个画师权重都 >1.2 会互相抢笔，建议 1–2 个",
+      "placeholder": ""
+    },
+    {
+      "name": "negative",
+      "type": "textarea",
+      "label": "负面预设词",
+      "description": "留空 = 用模型官方负面（4-5 系列已内置完整缺陷/画质排错词）；要额外排除什么再往这里加",
+      "placeholder": "",
+      "default": ""
+    },
+    {
+      "name": "width",
+      "type": "number",
+      "label": "默认宽",
+      "default": 832
+    },
+    {
+      "name": "height",
+      "type": "number",
+      "label": "默认高",
+      "default": 1216
+    },
+    {
+      "name": "steps",
+      "type": "number",
+      "label": "采样步数",
+      "default": 28
+    },
+    {
+      "name": "scale",
+      "type": "number",
+      "label": "CFG Scale",
+      "default": 4,
+      "description": "NAI 系建议 4–5；5 以上容易在脸部糊、风格打架"
+    },
+    {
+      "name": "qualityTags",
+      "type": "boolean",
+      "label": "补质量词",
+      "description": "仅 OpenAI 兼容回退时补质量词；NAI 原生走 qualityToggle，不会重复",
+      "default": true
+    },
+    {
+      "name": "maxArtistWeight",
+      "type": "number",
+      "label": "画师串权重上限",
+      "description": "超过这个值的权重自动压低（默认 1.2）；填 0 表示不限制",
+      "default": 1.2
+    },
+    {
+      "name": "charactersJson",
+      "type": "textarea",
+      "label": "角色档案 (JSON)",
+      "description": "格式 {\"小明\":\"silver hair, violet eyes, white shirt\"}；提示词里写 @小明 会自动展开",
+      "default": ""
+    },
+    {
+      "name": "vibesJson",
+      "type": "textarea",
+      "label": "Vibe 预设 (JSON)",
+      "description": "直接粘贴 .naiv4vibe 原文即可（自动取当前模型的 encoding）；也可用数组 [{\"name\",\"encoded\",\"strength\"}]。建议 1–2 个，叠太多会打架出鬼图",
+      "default": ""
+    },
+    {
+      "name": "sampler",
+      "type": "select",
+      "label": "采样器",
+      "default": "Euler Ancestral",
+      "options": [
+        {
+          "value": "Euler Ancestral",
+          "label": "Euler Ancestral"
+        },
+        {
+          "value": "Euler",
+          "label": "Euler"
+        },
+        {
+          "value": "DPM++ 2M SDE",
+          "label": "DPM++ 2M SDE"
+        },
+        {
+          "value": "DPM++ SDE",
+          "label": "DPM++ SDE"
+        }
+      ]
+    },
+    {
+      "name": "noiseSchedule",
+      "type": "select",
+      "label": "噪声调度",
+      "default": "Karras",
+      "options": [
+        {
+          "value": "Karras",
+          "label": "Karras"
+        },
+        {
+          "value": "Native",
+          "label": "Native"
+        },
+        {
+          "value": "Exponential",
+          "label": "Exponential"
+        },
+        {
+          "value": "Polyexponential",
+          "label": "Polyexponential"
+        }
+      ]
+    },
+    {
+      "name": "ucPreset",
+      "type": "select",
+      "label": "负面预设 UC",
+      "default": "3",
+      "options": [
+        {
+          "value": "0",
+          "label": "0 · Heavy"
+        },
+        {
+          "value": "1",
+          "label": "1 · Light"
+        },
+        {
+          "value": "2",
+          "label": "2 · Human Focus"
+        },
+        {
+          "value": "3",
+          "label": "3 · None"
+        }
+      ],
+      "description": "本地已给全负面词，建议 None；Heavy 会和本地负面重复叠加"
+    },
+    {
+      "name": "smea",
+      "type": "boolean",
+      "label": "SMEA",
+      "default": false
+    },
+    {
+      "name": "smeaDyn",
+      "type": "boolean",
+      "label": "SMEA DYN",
+      "default": false
+    },
+    {
+      "name": "varietyBoost",
+      "type": "boolean",
+      "label": "Variety+",
+      "description": "提升构图多样性",
+      "default": false
+    },
+    {
+      "name": "dynamicThresholding",
+      "type": "boolean",
+      "label": "Dynamic Thresholding",
+      "description": "高 CFG 抑制过曝",
+      "default": false
+    }
+  ],
+  "tools": [
+    {
+      "name": "nai_generate",
+      "description": "根据一段 Danbooru 风格标签生成图片。插件会自动加画师串、负面预设与渠道参数，并把图片写入图库后返回。",
+      "parameters": [
+        {
+          "name": "prompt",
+          "type": "string",
+          "description": "Danbooru 风格英文标签串，逗号分隔",
+          "required": true
+        },
+        {
+          "name": "negative",
+          "type": "string",
+          "description": "额外负面词，会与插件预设合并"
+        },
+        {
+          "name": "width",
+          "type": "integer",
+          "description": "宽，默认用插件配置"
+        },
+        {
+          "name": "height",
+          "type": "integer",
+          "description": "高，默认用插件配置"
+        },
+        {
+          "name": "count",
+          "type": "integer",
+          "description": "张数 1-4"
+        },
+        {
+          "name": "seed",
+          "type": "integer",
+          "description": "-1 随机，固定可复现"
+        },
+        {
+          "name": "plain",
+          "type": "boolean",
+          "description": "素图模式：不用画师串、不加质量词、只用最小负面。用来先看基础脸和构图，排查鬼图"
+        }
+      ]
+    }
+  ]
+}

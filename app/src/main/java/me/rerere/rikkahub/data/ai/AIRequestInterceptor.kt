@@ -15,16 +15,37 @@ import okhttp3.Request
 import okhttp3.Response
 import kotlin.io.encoding.Base64
 
-class AIRequestInterceptor : Interceptor {
+class AIRequestInterceptor(
+    /** OpenCode Zen 要求每个请求带 x-opencode-session，用于把同一对话路由到同一上游、保住 prompt 缓存 */
+    private val openCodeSessionId: () -> String = { "" },
+) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         var request = chain.request()
         val host = request.url.host
+
+        if (host.endsWith("opencode.ai")) {
+            request = decorateOpenCode(request)
+        }
 
 //        if (host == "api.siliconflow.cn") {
 //            request = processSiliconCloudRequest(request)
 //        }
 
         return chain.proceed(request)
+    }
+
+    private fun decorateOpenCode(request: Request): Request {
+        val builder = request.newBuilder()
+        if (request.header("x-opencode-session") == null) {
+            val session = openCodeSessionId()
+            if (session.isNotBlank()) {
+                builder.header("x-opencode-session", session)
+            }
+        }
+        if (request.header("x-opencode-client") == null) {
+            builder.header("x-opencode-client", "orangechat")
+        }
+        return builder.build()
     }
 
     // 处理硅基流动的请求

@@ -7,6 +7,9 @@
 package me.rerere.rikkahub.plugin.provider
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -133,7 +136,17 @@ class PluginToolProvider(
         return result.fold(
             onSuccess = { jsonElement ->
                 val resultStr = json.encodeToString(JsonElement.serializer(), jsonElement)
-                listOf(UIMessagePart.Text(resultStr))
+                val parts = mutableListOf<UIMessagePart>(UIMessagePart.Text(resultStr))
+
+                // 插件生图会返回 {images:[本地路径]}，这里转成图片部件，直接展示在对话里
+                val images = (jsonElement as? JsonObject)?.get("images") as? JsonArray
+                images?.forEach { element ->
+                    val path = (element as? JsonPrimitive)?.contentOrNull
+                    if (path != null && java.io.File(path).exists()) {
+                        parts.add(UIMessagePart.Image(url = "file://$path"))
+                    }
+                }
+                parts
             },
             onFailure = { error ->
                 val errorObj = buildJsonObject {

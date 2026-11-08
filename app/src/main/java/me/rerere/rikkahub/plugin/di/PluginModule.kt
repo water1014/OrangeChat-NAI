@@ -30,7 +30,17 @@ val pluginModule = module {
     single { PluginRepository(androidContext()) }
 
     // Loader - 需要OkHttpClient、MemoryBankService和SettingsStore
-    single { PluginLoader(androidContext(), get<OkHttpClient>(), get<MemoryBankService>(), get<SettingsStore>()) }
+    single {
+        PluginLoader(
+            context = androidContext(),
+            okHttpClient = get<OkHttpClient>(),
+            memoryBankService = get<MemoryBankService>(),
+            settingsStore = get<SettingsStore>(),
+            providerManager = get(),
+            filesManager = get(),
+            genMediaRepository = get(),
+        )
+    }
 
     // Manager
     single { PluginManager(androidContext(), get(), get(), get(), get()) }

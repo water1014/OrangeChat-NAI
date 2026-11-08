@@ -124,6 +124,14 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("ssh")
     data object Ssh : LocalToolOption()
+
+    /**
+     * AI 主动生图. 开启后注册 generate_image 工具,
+     * AI 可直接调用设置里选定的生图模型出图, 图片会回到对话里.
+     */
+    @Serializable
+    @SerialName("image_generation")
+    data object ImageGeneration : LocalToolOption()
 }
  
 class LocalTools(
@@ -132,6 +140,10 @@ class LocalTools(
     private val workflowRepository: me.rerere.rikkahub.workflow.repository.WorkflowRepository,
     private val workflowEngine: me.rerere.rikkahub.workflow.execution.WorkflowEngine,
     private val sshHostRepository: me.rerere.rikkahub.data.repository.SshHostRepository,
+    private val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore,
+    private val providerManager: me.rerere.ai.provider.ProviderManager,
+    private val filesManager: me.rerere.rikkahub.data.files.FilesManager,
+    private val genMediaRepository: me.rerere.rikkahub.data.repository.GenMediaRepository,
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -625,6 +637,19 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshUploadTool(context, sshHostRepository))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshDownloadTool(context, sshHostRepository))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.forgetSshHostKeyTool(context))
+        }
+        if (options.contains(LocalToolOption.ImageGeneration)) {
+            tools.add(
+                createImageGenerationTool(
+                    context = context,
+                    settingsStore = settingsStore,
+                    providerManager = providerManager,
+                    filesManager = filesManager,
+                    genMediaRepository = genMediaRepository,
+                )
+            )
+            // 角色外貌档案：与生图配套，开了生图才需要建档
+            tools.add(createCharacterLookTool(context))
         }
         return tools
     }

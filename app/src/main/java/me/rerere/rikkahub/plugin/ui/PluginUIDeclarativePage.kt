@@ -929,7 +929,7 @@ private fun DialogFormSheet(
                             label = { Text(if (required) "$label *" else label) },
                             placeholder = placeholder?.let { { Text(it) } },
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            readOnly = true, singleLine = true
+                            singleLine = true
                         )
                     }
                     "image" -> {

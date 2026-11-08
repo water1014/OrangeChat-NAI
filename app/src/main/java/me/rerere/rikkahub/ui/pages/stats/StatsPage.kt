@@ -26,6 +26,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -320,12 +323,10 @@ private fun StatsGrid(stats: AppStats, modifier: Modifier = Modifier) {
                 value = formatTokens(stats.totalCompletionTokens),
             )
         }
-        if (stats.totalCachedTokens > 0) {
-            StatCard(
-                modifier = Modifier.fillMaxWidth(),
-                icon = HugeIcons.Zap,
-                label = stringResource(R.string.stats_page_cached_tokens),
-                value = formatTokens(stats.totalCachedTokens),
+        if (stats.totalCachedTokens > 0 || stats.totalPromptTokens > 0) {
+            CacheHitCard(
+                cachedTokens = stats.totalCachedTokens,
+                promptTokens = stats.totalPromptTokens,
             )
         }
         StatCard(
@@ -379,4 +380,75 @@ private fun formatTokens(count: Long): String = when {
     count >= 1_000_000 -> "%.2fM".format(count / 1_000_000.0)
     count >= 1_000 -> "%.1fK".format(count / 1_000.0)
     else -> count.toString()
+}
+
+/** 缓存命中率：命中 tokens / 输入 tokens，直接反映上下文复用得好不好 */
+@Composable
+private fun CacheHitCard(
+    cachedTokens: Long,
+    promptTokens: Long,
+    modifier: Modifier = Modifier,
+) {
+    val rate = if (promptTokens > 0) {
+        (cachedTokens.toDouble() / promptTokens.toDouble()).coerceIn(0.0, 1.0)
+    } else 0.0
+    val percent = String.format("%.1f%%", rate * 100)
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CustomColors.cardColorsOnSurfaceContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = HugeIcons.Zap,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "缓存命中率",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = percent,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            LinearProgressIndicator(
+                progress = { rate.toFloat() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "命中 ${formatTokens(cachedTokens)} / 输入 ${formatTokens(promptTokens)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "省下 ${formatTokens(cachedTokens)} tokens",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                )
+            }
+        }
+    }
 }

@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -374,6 +375,8 @@ private fun ConfigField(
         "select" -> SelectConfigField(field, value, onValueChange)
         "password" -> StringConfigField(field, value, onValueChange, isPassword = true)
         "model" -> ModelConfigField(field, value, onValueChange)
+        "number" -> StringConfigField(field, value, onValueChange, isNumber = true)
+        "textarea", "json" -> StringConfigField(field, value, onValueChange, singleLine = false)
         else -> StringConfigField(field, value, onValueChange)
     }
 }
@@ -383,7 +386,9 @@ private fun StringConfigField(
     field: PluginConfigField,
     value: JsonElement?,
     onValueChange: (JsonElement?) -> Unit,
-    isPassword: Boolean = false
+    isPassword: Boolean = false,
+    isNumber: Boolean = false,
+    singleLine: Boolean = true
 ) {
     var textValue by remember(field.name) {
         val v = value as? JsonPrimitive
@@ -399,9 +404,14 @@ private fun StringConfigField(
         label = { Text(field.label) },
         placeholder = { Text(field.placeholder ?: "") },
         supportingText = field.description?.let { { Text(it) } },
-        singleLine = true,
+        singleLine = singleLine,
+        minLines = if (singleLine) 1 else 4,
+        maxLines = if (singleLine) 1 else 12,
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (isNumber) KeyboardType.Number else KeyboardType.Text,
+            imeAction = if (singleLine) ImeAction.Next else ImeAction.Default
+        ),
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
     )
 }
@@ -442,20 +452,60 @@ private fun SelectConfigField(
         val d = field.default as? JsonPrimitive
         mutableStateOf(v?.contentOrNull ?: d?.contentOrNull ?: field.options?.firstOrNull()?.value ?: "")
     }
+    var expanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(text = field.label, style = MaterialTheme.typography.bodyLarge)
         if (field.description != null) {
             Text(text = field.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(modifier = Modifier.height(4.dp))
-        val optionsText = field.options?.joinToString(", ") { it.label } ?: ""
-        OutlinedTextField(
-            value = field.options?.find { it.value == selectedValue }?.label ?: selectedValue,
-            onValueChange = { },
-            readOnly = true,
-            supportingText = { Text("可用选项: $optionsText") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = field.options?.find { it.value == selectedValue }?.label ?: selectedValue,
+                onValueChange = { },
+                readOnly = true,
+                trailingIcon = {
+                    IconButton(onClick = { expanded = !expanded }) {
+                        Icon(imageVector = HugeIcons.ArrowRight01, contentDescription = "展开选项")
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = true }
+            )
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                border = materialModeBorderStroke(),
+            ) {
+                if (field.options.isNullOrEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("无可选项") },
+                        onClick = { expanded = false }
+                    )
+                } else {
+                    field.options.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = option.label,
+                                    color = if (option.value == selectedValue) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            },
+                            onClick = {
+                                selectedValue = option.value
+                                onValueChange(JsonPrimitive(option.value))
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

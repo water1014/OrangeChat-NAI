@@ -191,6 +191,7 @@ val dataSourceModule = module {
     }
 
     single<OkHttpClient> {
+        val appContext = get<Context>()
         val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
             .build()
 
@@ -246,7 +247,16 @@ val dataSourceModule = module {
                 }
             }
             .addNetworkInterceptor(RequestLoggingInterceptor())
-            .addInterceptor(AIRequestInterceptor())
+            .addInterceptor(
+                AIRequestInterceptor(
+                    openCodeSessionId = {
+                        val prefs = appContext.getSharedPreferences("opencode", Context.MODE_PRIVATE)
+                        prefs.getString("session_id", null) ?: java.util.UUID.randomUUID().toString().also {
+                            prefs.edit().putString("session_id", it).apply()
+                        }
+                    }
+                )
+            )
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
             })

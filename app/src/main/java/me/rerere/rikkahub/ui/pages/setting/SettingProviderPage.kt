@@ -6,6 +6,8 @@
 
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
+
 import android.net.Uri
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Camera01
@@ -13,6 +15,7 @@ import me.rerere.hugeicons.stroke.DragDropHorizontal
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Refresh03
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Cancel01
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -142,6 +146,22 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                             }
                         ) {
                             AutoAIIcon("AiHubMix")
+                        }
+                    }
+                    if (settings.hiddenProviderIds.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                vm.updateSettings(
+                                    settings.copy(
+                                        providers = settings.providers + DEFAULT_PROVIDERS.filter {
+                                            it.id in settings.hiddenProviderIds
+                                        },
+                                        hiddenProviderIds = emptySet(),
+                                    )
+                                )
+                            }
+                        ) {
+                            Icon(HugeIcons.Refresh03, "恢复内置提供商")
                         }
                     }
                     ImportProviderButton {
@@ -512,7 +532,7 @@ private fun ProviderItem(
     onClick: () -> Unit
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 168.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (provider.enabled) {
                 CustomColors.listItemColors.containerColor
@@ -543,8 +563,8 @@ private fun ProviderItem(
             ) {
                 Text(
                     text = provider.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    maxLines = 2,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 ProvideTextStyle(MaterialTheme.typography.labelSmall) {

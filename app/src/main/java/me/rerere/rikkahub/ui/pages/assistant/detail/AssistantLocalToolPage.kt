@@ -254,6 +254,23 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
+            item(
+                headlineContent = { Text("AI 生图") },
+                supportingContent = { Text("允许 AI 直接调用设置里选定的生图模型出图，图片会返回对话；每次调用需要你确认") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.ImageGeneration),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.ImageGeneration
+                            } else {
+                                assistant.localTools - LocalToolOption.ImageGeneration
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
         }
     }
 }

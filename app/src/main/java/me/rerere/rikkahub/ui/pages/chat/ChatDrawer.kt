@@ -9,10 +9,13 @@ package me.rerere.rikkahub.ui.pages.chat
 import androidx.activity.ComponentActivity
 import android.graphics.BitmapFactory
 import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -67,8 +72,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import kotlinx.coroutines.flow.collectLatest
@@ -395,6 +402,18 @@ fun ChatDrawerContent(
                     val currentAssistantId = settings.assistantId
                     navController.navigate(Screen.AssistantDetail(id = currentAssistantId.toString()))
                 }
+            )
+
+            // 插件快捷入口：像 Operit 那样直接把插件摊在侧边栏，点图标就进插件页
+            val pluginManager: me.rerere.rikkahub.plugin.manager.PluginManager = koinInject()
+            val allPlugins by pluginManager.plugins.collectAsStateWithLifecycle()
+            val enabledPlugins = remember(allPlugins) { allPlugins.filter { it.isEnabled } }
+
+            PluginDrawerSection(
+                plugins = enabledPlugins,
+                onOpenPlugin = { pluginId -> navController.navigate(Screen.PluginDetail(pluginId)) },
+                onManage = { navController.navigate(Screen.SettingPlugins) },
+                onOpenImageGen = { navController.navigate(Screen.ImageGen) },
             )
 
             Row(
@@ -1154,6 +1173,149 @@ private fun AssistantItem(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 侧边栏插件条：横向排列图标，最多 8 个，超出进「管理」页。
+ * 沿用抽屉的透明度体系，避免和聊天输入框的玻璃层抢视觉。
+ */
+@Composable
+private fun PluginDrawerSection(
+    plugins: List<me.rerere.rikkahub.plugin.model.PluginInfo>,
+    onOpenPlugin: (String) -> Unit,
+    onManage: () -> Unit,
+    onOpenImageGen: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 2.dp),
+        ) {
+            Text(
+                text = "工具与插件",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = if (plugins.size > 8) "${plugins.size} 个 · 管理" else "管理",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onManage() }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // 生图固定在第一位，和插件图标同一套视觉，点一下直接进生图面板
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .width(58.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onOpenImageGen() }
+                    .padding(vertical = 6.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Image02,
+                        contentDescription = "生图",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "生图",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            if (plugins.isEmpty()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .width(58.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onManage() }
+                        .padding(vertical = 6.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("＋", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "加插件",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+
+            plugins.take(7).forEach { plugin ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(58.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onOpenPlugin(plugin.manifest.id) }
+                            .padding(vertical = 6.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = plugin.manifest.icon.ifBlank { "🧩" },
+                                fontSize = 19.sp,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = plugin.manifest.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
         }
     }
 }

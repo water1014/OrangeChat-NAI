@@ -126,7 +126,10 @@ fun PluginManagePage(
     LaunchedEffect(importState) {
         when (importState) {
             is PluginViewModel.ImportState.Success -> {
-                snackbarHostState.showSnackbar(message = "插件导入成功")
+                val installed = (importState as PluginViewModel.ImportState.Success).plugin
+                snackbarHostState.showSnackbar(
+                    message = "${installed.manifest.name} 已更新至 v${installed.manifest.version}"
+                )
                 viewModel.resetImportState()
             }
             is PluginViewModel.ImportState.Error -> {
@@ -165,11 +168,19 @@ fun PluginManagePage(
 
     pendingImport?.let { pending ->
         val manifest = pending.manifest
+        val installed = viewModel.getPlugin(manifest.id)
         AlertDialog(
             onDismissRequest = { viewModel.cancelImportPreview() },
-            title = { Text("确认安装插件") },
+            title = { Text(if (installed != null) "覆盖升级插件" else "确认安装插件") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (installed != null) {
+                        Text(
+                            text = "已安装 v${installed.manifest.version}，将覆盖为 v${manifest.version}。原有配置、分组和启用状态都会保留。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text("插件名称: ${manifest.name}")
                     Text("版本: ${manifest.version}")
                     Text("作者: ${manifest.author}")
@@ -204,7 +215,7 @@ fun PluginManagePage(
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.confirmImport() }) {
-                    Text("确认安装")
+                    Text(if (installed != null) "覆盖升级" else "确认安装")
                 }
             },
             dismissButton = {

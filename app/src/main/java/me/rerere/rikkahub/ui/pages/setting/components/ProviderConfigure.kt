@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -316,6 +317,23 @@ private fun ColumnScope.ProviderConfigureOpenAI(
             modifier = Modifier.fillMaxWidth(),
             enabled = !provider.builtIn
         )
+    }
+
+    // 生图协议：NAI 中转要选「NovelAI 原生」，否则参数会被当未知字段忽略
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("生图协议", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                me.rerere.ai.provider.ImageProtocol.OPENAI to "OpenAI 兼容",
+                me.rerere.ai.provider.ImageProtocol.NOVELAI to "NovelAI 原生",
+            ).forEach { (protocol, label) ->
+                FilterChip(
+                    selected = provider.imageProtocol == protocol,
+                    onClick = { onEdit(provider.copy(imageProtocol = protocol)) },
+                    label = { Text(label) },
+                )
+            }
+        }
     }
 
     Row(

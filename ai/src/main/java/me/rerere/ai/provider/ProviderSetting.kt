@@ -28,6 +28,13 @@ enum class ClaudePromptCacheTtl(val apiValue: String?) {
     ONE_HOUR("1h")
 }
 
+/** 生图走的协议：OpenAI 兼容 /images/generations，或 NovelAI 原生 /ai/generate-image */
+@Serializable
+enum class ImageProtocol {
+    OPENAI,
+    NOVELAI,
+}
+
 @Serializable
 sealed class ProviderSetting {
     abstract val id: Uuid
@@ -70,6 +77,8 @@ sealed class ProviderSetting {
         var baseUrl: String = "https://api.openai.com/v1",
         var chatCompletionsPath: String = "/chat/completions",
         var useResponseApi: Boolean = false,
+        /** 生图协议；NAI 中转通常要用 NOVELAI，否则参数会被忽略 */
+        var imageProtocol: ImageProtocol = ImageProtocol.OPENAI,
     ) : ProviderSetting() {
         override fun addModel(model: Model): ProviderSetting {
             return copy(models = models + model)

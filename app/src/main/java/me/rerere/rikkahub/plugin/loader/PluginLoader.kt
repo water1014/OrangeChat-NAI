@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
@@ -35,7 +36,10 @@ class PluginLoader(
     private val context: Context,
     private val okHttpClient: OkHttpClient,
     private val memoryBankService: MemoryBankService? = null,
-    private val settingsStore: SettingsStore? = null
+    private val settingsStore: SettingsStore? = null,
+    private val providerManager: me.rerere.ai.provider.ProviderManager? = null,
+    private val filesManager: me.rerere.rikkahub.data.files.FilesManager? = null,
+    private val genMediaRepository: me.rerere.rikkahub.data.repository.GenMediaRepository? = null,
 ) {
  
     companion object {
@@ -89,7 +93,13 @@ class PluginLoader(
             // 为此插件创建独立的 PluginDataStore，并注入沙箱
             val dataStore = PluginDataStore(context, pluginInfo.manifest.id)
 
-            val sandbox = PluginSandbox(context, okHttpClient, memoryBankService, dataStore)
+            val sandbox = PluginSandbox(
+                context = context,
+                okHttpClient = okHttpClient,
+                memoryBankService = memoryBankService,
+                dataStore = dataStore,
+                imageBridge = { action, params -> handleImageBridge(action, params) },
+            )
             sandbox.allowedHosts = pluginInfo.manifest.allowedHosts
             sandbox.initialize()
  
@@ -248,5 +258,231 @@ class PluginLoader(
  
     suspend fun unloadAll() = withContext(pluginDispatcher) {
         loadedPlugins.keys.toList().forEach { doUnloadPlugin(it) }
+    }
+
+    /**
+     * 生图桥接：插件只传参数，宿主负责发请求、解包、落盘。
+     * 这样 QuickJS 不用处理 zip 二进制，插件也能真正产出图片。
+     */
+    private fun handleImageBridge(action: String, paramsJson: String): String {
+        if (action != "generate") {
+            return """{"success":false,"error":"unknown action: $action"}"""
+        }
+        val pm = providerManager
+        val fm = filesManager
+        val repo = genMediaRepository
+        if (pm == null || fm == null || repo == null) {
+            return """{"success":false,"error":"image bridge not wired"}"""
+        }
+
+        return kotlinx.coroutines.runBlocking {
+            try {
+                val obj = org.json.JSONObject(paramsJson)
+                val baseUrl = obj.optString("baseUrl").trim().trimEnd('/')
+                if (baseUrl.isBlank()) {
+                    return@runBlocking """{"success":false,"error":"请先在插件配置里填站点地址"}"""
+                }
+                val apiKey = obj.optString("apiKey")
+                val protocol = obj.optString("protocol", "NOVELAI")
+                val modelId = obj.optString("model", "nai-diffusion-4-5-full")
+                val prompt = obj.optString("prompt")
+                val negative = obj.optString("negative")
+                val width = obj.optInt("width", 832).coerceIn(64, 2048)
+                val height = obj.optInt("height", 1216).coerceIn(64, 2048)
+                val count = obj.optInt("count", 1).coerceIn(1, 4)
+                val seed = obj.optLong("seed", -1L)
+                val steps = obj.optInt("steps", 28).coerceIn(1, 50)
+                val scale = obj.optDouble("scale", 5.0).toFloat().coerceIn(0f, 10f)
+                val sampler = obj.optString("sampler", "Euler Ancestral")
+                val noiseSchedule = obj.optString("noiseSchedule", "Karras")
+                val ucPreset = obj.optInt("ucPreset", 0).coerceIn(0, 3)
+                val sm = obj.optBoolean("sm", false)
+                val smDyn = obj.optBoolean("smDyn", false)
+                val varietyBoost = obj.optBoolean("varietyBoost", false)
+                val dynamicThresholding = obj.optBoolean("dynamicThresholding", false)
+
+                // 插件可以带已编码的 vibe（NAI 的 .naiv4vibe），这里直接透传给 provider
+                val cachedVibes = buildList {
+                    obj.optJSONArray("vibes")?.let { arr ->
+                        for (i in 0 until arr.length()) {
+                            val v = arr.optJSONObject(i) ?: continue
+                            val encoded = v.optString("encoded")
+                            if (encoded.isNotBlank()) {
+                                add(
+                                    me.rerere.ai.provider.CachedVibe(
+                                        encoded = encoded,
+                                        strength = v.optDouble("strength", 0.6).toFloat().coerceIn(0f, 1f),
+                                        model = v.optString("model"),
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 两种协议的前缀规则不一样：NAI 原生是 {根}/ai/generate-image，
+                // OpenAI 是 {根}/v1/images/generations。用户只填一个地址，这里按协议自动纠正，
+                // 免得「填了 /v1 走原生变 404」「没填 /v1 走兼容变 404」两头踩坑。
+                val naiBase = if (baseUrl.endsWith("/v1")) baseUrl.dropLast(3) else baseUrl
+                val openAiBase = if (Regex("^https?://[^/]+$").matches(baseUrl)) "$baseUrl/v1" else baseUrl
+                val isOpenAiProtocol = protocol.equals("OPENAI", true)
+
+                val setting = me.rerere.ai.provider.ProviderSetting.OpenAI(
+                    name = "Plugin",
+                    baseUrl = if (isOpenAiProtocol) openAiBase else naiBase,
+                    apiKey = apiKey,
+                    imageProtocol = if (isOpenAiProtocol) {
+                        me.rerere.ai.provider.ImageProtocol.OPENAI
+                    } else {
+                        me.rerere.ai.provider.ImageProtocol.NOVELAI
+                    },
+                )
+                val model = me.rerere.ai.provider.Model(
+                    modelId = modelId,
+                    displayName = modelId,
+                    type = me.rerere.ai.provider.ModelType.IMAGE,
+                )
+                val samplerKey = when (sampler) {
+                    "Euler" -> "k_euler"
+                    "DPM++ 2M SDE" -> "k_dpmpp_2m_sde"
+                    "DPM++ SDE" -> "k_dpmpp_sde"
+                    else -> "k_euler_ancestral"
+                }
+                val noiseKey = when (noiseSchedule.lowercase()) {
+                    "native" -> "native"
+                    "exponential" -> "exponential"
+                    "polyexponential" -> "polyexponential"
+                    else -> "karras"
+                }
+                val naiParams = kotlinx.serialization.json.buildJsonObject {
+                    put("steps", steps)
+                    put("scale", scale)
+                    put("seed", seed)
+                    put("sampler", samplerKey)
+                    put("noise_schedule", noiseKey)
+                    put("ucPreset", ucPreset)
+                    put("sm", sm)
+                    put("sm_dyn", smDyn)
+                    put("variety_boost", varietyBoost)
+                    put("dynamic_thresholding", dynamicThresholding)
+                    put("qualityToggle", true)
+                }
+                // OpenAI 兼容没有参数位。严格模式下只发 model/prompt/n/size 四个字段，
+                // 多带任何未知字段都可能被网关判 400（Unrecognized request argument）。
+                val strictOpenAI = obj.optBoolean("strictOpenAI", true)
+                val customBodies = if (protocol.equals("OPENAI", true) && !strictOpenAI) {
+                    buildList {
+                        add(me.rerere.ai.provider.CustomBody("steps", kotlinx.serialization.json.JsonPrimitive(steps)))
+                        add(me.rerere.ai.provider.CustomBody("cfg_scale", kotlinx.serialization.json.JsonPrimitive(scale)))
+                        add(me.rerere.ai.provider.CustomBody("sampler", kotlinx.serialization.json.JsonPrimitive(sampler)))
+                        add(me.rerere.ai.provider.CustomBody("seed", kotlinx.serialization.json.JsonPrimitive(seed)))
+                        add(me.rerere.ai.provider.CustomBody("noise_schedule", kotlinx.serialization.json.JsonPrimitive(noiseKey)))
+                        add(me.rerere.ai.provider.CustomBody("ucPreset", kotlinx.serialization.json.JsonPrimitive(ucPreset)))
+                        add(me.rerere.ai.provider.CustomBody("sm", kotlinx.serialization.json.JsonPrimitive(sm)))
+                        add(me.rerere.ai.provider.CustomBody("sm_dyn", kotlinx.serialization.json.JsonPrimitive(smDyn)))
+                        add(me.rerere.ai.provider.CustomBody("variety_boost", kotlinx.serialization.json.JsonPrimitive(varietyBoost)))
+                        add(me.rerere.ai.provider.CustomBody("dynamic_thresholding", kotlinx.serialization.json.JsonPrimitive(dynamicThresholding)))
+                        if (negative.isNotBlank()) {
+                            add(me.rerere.ai.provider.CustomBody("negative_prompt", kotlinx.serialization.json.JsonPrimitive(negative)))
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+
+                val params = me.rerere.ai.provider.ImageGenerationParams(
+                    model = model,
+                    prompt = prompt,
+                    numOfImages = count,
+                    width = width,
+                    height = height,
+                    negativePrompt = negative.ifBlank { null },
+                    cachedVibes = cachedVibes,
+                    naiParameters = naiParams,
+                    customBody = customBodies,
+                )
+
+                val result = if (protocol.equals("AUTO", true)) {
+                    // AUTO：先按 NAI 原生打（柏宝绘同款路径，parameters 最完整）；
+                    // 站点只做 OpenAI 兼容时会回 404/405，这时再回退，用户不用自己猜协议。
+                    try {
+                        pm.getProviderByType(setting).generateImage(setting, params)
+                    } catch (e: Exception) {
+                        val msg = (e.message ?: "").lowercase()
+                        val shouldFallback = msg.contains("404") || msg.contains("405") ||
+                            msg.contains("not found") || msg.contains("unsupported") ||
+                            msg.contains("method not allowed")
+                        if (!shouldFallback) throw e
+                        val openAiSetting = me.rerere.ai.provider.ProviderSetting.OpenAI(
+                            name = setting.name,
+                            baseUrl = openAiBase,
+                            apiKey = apiKey,
+                            imageProtocol = me.rerere.ai.provider.ImageProtocol.OPENAI,
+                        )
+                        pm.getProviderByType(openAiSetting)
+                            .generateImage(openAiSetting, params.copy(customBody = emptyList()))
+                    }
+                } else {
+                    pm.getProviderByType(setting).generateImage(setting, params)
+                }
+                val imagesDir = fm.getImagesDir()
+                val ts = System.currentTimeMillis()
+                val paths = org.json.JSONArray()
+                val seeds = org.json.JSONArray()
+
+                result.items.forEachIndexed { index, item ->
+                    val file = java.io.File(imagesDir, "${ts}_plugin_${index}.png")
+                    fm.createImageFileFromBase64(item.data, file.absolutePath)
+                    if (file.exists() && file.length() > 0) {
+                        repo.insertMedia(
+                            me.rerere.rikkahub.data.db.entity.GenMediaEntity(
+                                path = "images/${file.name}",
+                                modelId = modelId,
+                                prompt = prompt,
+                                createAt = ts,
+                                type = me.rerere.rikkahub.data.db.entity.GenMediaEntity.TYPE_IMAGE_GENERATION,
+                            )
+                        )
+                        paths.put(file.absolutePath)
+                        item.seed?.let { seeds.put(it) }
+
+                        // 出图参数 sidecar，图库可以直接回溯
+                        runCatching {
+                            val meta = org.json.JSONObject()
+                                .put("body", prompt)
+                                .put("full_prompt", prompt)
+                                .put("model", modelId)
+                                .put("seed", item.seed ?: seed)
+                                .put("width", width)
+                                .put("height", height)
+                                .put("steps", steps)
+                                .put("scale", scale)
+                                .put("sampler", sampler)
+                                .put("noise_schedule", noiseSchedule)
+                                .put("vibe", cachedVibes.size)
+                                .put("plugin", "com.orangechat.naigen")
+                                .put("created_at", ts)
+                            java.io.File(imagesDir, "${file.name}.json").writeText(meta.toString())
+                        }
+                    }
+                }
+
+                if (paths.length() == 0) {
+                    """{"success":false,"error":"模型没有返回可用图片"}"""
+                } else {
+                    org.json.JSONObject()
+                        .put("success", true)
+                        .put("images", paths)
+                        .put("seeds", seeds)
+                        .toString()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "image bridge generate failed", e)
+                org.json.JSONObject()
+                    .put("success", false)
+                    .put("error", e.message ?: "生成失败")
+                    .toString()
+            }
+        }
     }
 }

@@ -19,6 +19,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.SerialName
@@ -312,8 +316,11 @@ class SettingsStore(
             )
         }
         .map {
-            var providers = it.providers.ifEmpty { DEFAULT_PROVIDERS }.toMutableList()
+            var providers = it.providers.ifEmpty {
+                DEFAULT_PROVIDERS.filterNot { default -> default.id in it.hiddenProviderIds }
+            }.toMutableList()
             DEFAULT_PROVIDERS.forEach { defaultProvider ->
+                if (defaultProvider.id in it.hiddenProviderIds) return@forEach
                 if (providers.none { it.id == defaultProvider.id }) {
                     providers.add(defaultProvider.copyProvider())
                 }
@@ -415,6 +422,18 @@ class SettingsStore(
     val settingsFlow = settingsFlowRaw
         .distinctUntilChanged()
         .toMutableStateFlow(scope, Settings.dummy())
+
+    private val _isLoaded = MutableStateFlow(false)
+
+    /** 首次从磁盘读到真实设置之前为 false，避免启动瞬间用默认值误判（协议页闪一下） */
+    val isLoaded: StateFlow<Boolean> = _isLoaded
+
+    init {
+        scope.launch {
+            runCatching { settingsFlowRaw.first() }
+            _isLoaded.value = true
+        }
+    }
 
     suspend fun update(settings: Settings) {
         if(settings.init) {
@@ -597,6 +616,8 @@ data class Settings(
     val compressPrompt: String = DEFAULT_COMPRESS_PROMPT,
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
     val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
+    /** 用户主动删掉的内置提供商：记住它们，避免每次启动又被合并回来 */
+    val hiddenProviderIds: Set<Uuid> = emptySet(),
     val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
     val assistantTags: List<Tag> = emptyList(),
     val searchServices: List<SearchServiceOptions> = listOf(SearchServiceOptions.DEFAULT),

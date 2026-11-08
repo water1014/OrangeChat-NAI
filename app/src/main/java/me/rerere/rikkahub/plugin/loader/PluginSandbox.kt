@@ -37,7 +37,9 @@ class PluginSandbox(
     private val context: Context,
     private val okHttpClient: OkHttpClient,
     private var memoryBankService: MemoryBankService? = null,
-    private val dataStore: PluginDataStore? = null
+    private val dataStore: PluginDataStore? = null,
+    /** 生图桥接：插件只负责组提示词，请求 / 解包 / 落盘由宿主完成 */
+    private val imageBridge: ((String, String) -> String)? = null
 ) {
  
     companion object {
@@ -303,6 +305,19 @@ function fetch(url, options) {
             })
 
             // 注入 PluginDataStore 桥接
+            // 注入生图桥接：__imageBridge('generate', json) -> {success, images:[path], seeds:[..]}
+            getGlobalObject().setProperty("__imageBridge", JSCallFunction { args ->
+                val action = args[0] as? String ?: ""
+                val paramsJson = args[1] as? String ?: "{}"
+                try {
+                    imageBridge?.invoke(action, paramsJson)
+                        ?: """{"success":false,"error":"image bridge not available"}"""
+                } catch (e: Exception) {
+                    Log.e(TAG, "Image bridge error: action=$action", e)
+                    """{"success":false,"error":${escapeJson(e.message ?: "Unknown error")}}"""
+                }
+            })
+
             getGlobalObject().setProperty("__dataStoreBridge", JSCallFunction { args ->
                 val action = args[0] as? String ?: ""
                 val paramsJson = args[1] as? String ?: "{}"

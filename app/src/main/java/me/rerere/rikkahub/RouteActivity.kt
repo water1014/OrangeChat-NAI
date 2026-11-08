@@ -148,6 +148,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingDisplayTransparencyPage
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
 import me.rerere.rikkahub.ui.pages.setting.SettingDonatePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
+import me.rerere.rikkahub.ui.pages.setting.SettingImageGenPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
@@ -334,8 +335,17 @@ class RouteActivity : ComponentActivity() {
     fun AppRoutes() {
         val toastState = rememberToasterState()
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+        val settingsLoaded by settingsStore.isLoaded.collectAsStateWithLifecycle()
         val scope = rememberCoroutineScope()
         val tts = rememberCustomTtsState()
+
+        // 设置还没从磁盘读出来时先不渲染，避免用默认值误判、协议页闪一下再跳走
+        if (!settingsLoaded) {
+            androidx.compose.foundation.layout.Box(
+                modifier = androidx.compose.ui.Modifier.fillMaxSize()
+            )
+            return
+        }
 
         // 首次启动：未同意免责声明时强制展示
         if (!settings.disclaimerAccepted) {
@@ -683,6 +693,10 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.Stats> {
                                 StatsPage()
+                            }
+
+                            entry<Screen.SettingImageGen> {
+                                SettingImageGenPage()
                             }
 
                             entry<Screen.SettingSystemTools> {
@@ -1065,6 +1079,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Stats : Screen
+
+    @Serializable
+    data object SettingImageGen : Screen
 
     @Serializable
     data object SettingSystemTools : Screen
