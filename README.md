@@ -375,7 +375,7 @@ AI 社交动态插件，使用 Supabase 作为后端存储，附带 `supabase_sc
 | 项目 | 值 |
 | --- | --- |
 | 应用版本 | **2.7.3**（versionCode 176，包名 `me.rerere.orangechat.liquidglass`） |
-| 插件 `naigen` | **1.4.2**（`plugins/naigen/`，NAI-ImageGen-plugin） |
+| 插件 `naigen` | **1.5.0**（`plugins/naigen/`，NAI-ImageGen-plugin） |
 
 ### 主要改动
 
@@ -386,6 +386,21 @@ AI 社交动态插件，使用 Supabase 作为后端存储，附带 `supabase_sc
 - **负面提示**：默认空，改用模型官方负面预设（ucPreset=3）。
 - **插件覆盖升级**：`PluginScanner.completeImport` 由「同 ID 拒绝」改为覆盖升级（旧目录备份回滚）。
 - **配置页下拉框可交互**：修复 `PluginDetailPage` / `PluginUIDeclarativePage` 中 `readOnly` 导致 Select 点不动。
+
+### 2024-11 二次增强（对齐 OVONovelAI 参考站）
+
+参考 `OVONovelAI.html`（第三方 NAI 生图前端）补齐插件与宿主桥能力，使 `naigen` 真正对齐参考站的参数与玩法：
+
+- **完整 NAI 原生参数透传**：插件新增 `extra` 透传通道，把 `cfg_rescale`、`controlnet_strength`、`add_original_image`、`legacy` / `legacy_uc` / `legacy_v3_extend`、`normalize_reference_strength_multiple`、`use_coords` 等按参考站口径写入 NAI 请求体；宿主桥 `PluginLoader.handleImageBridge` 读取 `payload.extra` 并合并进 `naiParameters`。
+- **图生图（img2img）**：工具参数 `image`（base64 / data URL / 路径）+ 可选 `strength` / `noise`；`extra_noise_seed` 自动带上。
+- **局部重绘（infill）**：工具参数 `mask`（黑白蒙版，白色=重绘区），自动切 `action=infill` 并给模型追加 `-inpainting`（`OpenAIProvider.sendNaiRequest` 按 `parameters` 里有无 `image` / `mask` 动态选 `action`）。
+- **Vibe 风格迁移**：参考图可走「本地路径（宿主 `/ai/encode-vibe` 编码）」或「base64（插件侧 `/ai/encode-vibe` 编码）」两条路，统一汇入 `vibes` / `referenceImages`。
+- **V4.5 角色参考（director reference）**：工具参数 `crefImages`（角色参考图数组）+ `crefStrength` / `crefFidelity` / `crefStyle`，拼成 `director_reference_images` / `_descriptions` / `_information_extracted` / `_strength_values` / `_secondary_strength_values`。
+- **采样器扩到 7 种**：`Euler Ancestral` / `Euler` / `DPM++ 2M SDE` / `DPM++ SDE` / `DPM++ 2S Ancestral` / `DPM++ 2M` / `DDIM`，宿主桥映射补齐 `k_dpmpp_2s_ancestral` / `k_dpmpp_2m` / `ddim_v3`。
+- **Variety+ 修正**：`varietyBoost` 由无效的 `variety_boost` 键改为 NAI 实际字段 `skip_cfg_above_sigma: 19`。
+- **新增配置项**：`rescale`、`useCoords`、`normalizeVibe`、`i2iStrength`、`i2iNoise`、`crefStrength`、`crefFidelity`、`crefStyle`。
+
+> 注：`extra` 里的字段仅在 NAI 原生 / AUTO 协议下生效；OpenAI 兼容协议忽略它们（兼容接口无对应参数位）。
 
 ### NAI 插件约定（对齐柏宝绘 `src/backends/nai.ts`）
 

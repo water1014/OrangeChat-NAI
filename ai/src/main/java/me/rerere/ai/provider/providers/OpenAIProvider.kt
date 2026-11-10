@@ -622,10 +622,22 @@ private suspend fun sendNaiRequest(
     headers: List<CustomHeader>,
     httpClient: OkHttpClient,
 ): String {
+    // 图生图 / 局部重绘：parameters 里带 image 即 img2img，带 mask 即 infill（蒙版重绘）。
+    // 由插件经 extra 注入，宿主构造请求体时按 NAI 实际口径切 action。
+    val hasImage = parameters["image"] != null
+    val hasMask = parameters["mask"] != null
+    val action = when {
+        hasMask -> "infill"
+        hasImage -> "img2img"
+        else -> "generate"
+    }
+    // infill 必须走 inpainting 模型，用户没带后缀时自动补
+    val effectiveModelId = if (hasMask && !modelId.endsWith("-inpainting")) "$modelId-inpainting" else modelId
+
     val body = buildJsonObject {
         put("input", prompt)
-        put("model", modelId)
-        put("action", "generate")
+        put("model", effectiveModelId)
+        put("action", action)
         put("parameters", parameters)
         // 官方前端同款标记，部分中转按它判断请求来自正式客户端
         put("use_new_shared_trial", true)

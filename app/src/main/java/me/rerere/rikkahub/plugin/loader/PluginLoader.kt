@@ -11,7 +11,10 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.contentOrNull
@@ -346,6 +349,9 @@ class PluginLoader(
                     "Euler" -> "k_euler"
                     "DPM++ 2M SDE" -> "k_dpmpp_2m_sde"
                     "DPM++ SDE" -> "k_dpmpp_sde"
+                    "DPM++ 2S Ancestral" -> "k_dpmpp_2s_ancestral"
+                    "DPM++ 2M" -> "k_dpmpp_2m"
+                    "DDIM" -> "ddim_v3"
                     else -> "k_euler_ancestral"
                 }
                 val noiseKey = when (noiseSchedule.lowercase()) {
@@ -354,7 +360,22 @@ class PluginLoader(
                     "polyexponential" -> "polyexponential"
                     else -> "karras"
                 }
-                val naiParams = kotlinx.serialization.json.buildJsonObject {
+                // org.json → kotlinx.serialization.json.JsonElement（用于透传插件 extra 的 NAI 原生参数）
+                fun jsonElementFromOrg(o: Any?): JsonElement = when (o) {
+                    null -> JsonNull
+                    is Boolean -> JsonPrimitive(o)
+                    is Number -> JsonPrimitive(o)
+                    is String -> JsonPrimitive(o)
+                    is org.json.JSONObject -> JsonObject(
+                        o.keys().asSequence().associate { k -> k to jsonElementFromOrg(o.get(k)) }
+                    )
+                    is org.json.JSONArray -> JsonArray(
+                        (0 until o.length()).map { jsonElementFromOrg(o.get(it)) }
+                    )
+                    else -> JsonNull
+                }
+
+                val naiParamsBase = kotlinx.serialization.json.buildJsonObject {
                     put("steps", steps)
                     put("scale", scale)
                     put("seed", seed)
@@ -363,10 +384,24 @@ class PluginLoader(
                     put("ucPreset", ucPreset)
                     put("sm", sm)
                     put("sm_dyn", smDyn)
-                    put("variety_boost", varietyBoost)
+                    // variety 正确映射为 NAI 实际字段 skip_cfg_above_sigma（替代此前无效的 variety_boost 键）
+                    if (varietyBoost) put("skip_cfg_above_sigma", 19) else put("skip_cfg_above_sigma", JsonNull)
                     put("dynamic_thresholding", dynamicThresholding)
                     put("qualityToggle", true)
                 }
+                // 透传插件 extra 里的 NAI 原生参数（图生图 / 重绘 / 角色参考 / rescale 等），覆盖上面默认值
+                val naiParams = runCatching {
+                    val extraJson = obj.optJSONObject("extra")?.let { jsonElementFromOrg(it) } as? JsonObject
+                    if (extraJson != null) {
+                        JsonObject(
+                            naiParamsBase.toMutableMap().apply {
+                                extraJson.forEach { (k, v) -> put(k, v) }
+                            }
+                        )
+                    } else {
+                        naiParamsBase
+                    }
+                }.getOrElse { naiParamsBase }
                 // OpenAI 兼容没有参数位。严格模式下只发 model/prompt/n/size 四个字段，
                 // 多带任何未知字段都可能被网关判 400（Unrecognized request argument）。
                 val strictOpenAI = obj.optBoolean("strictOpenAI", true)
@@ -390,6 +425,16 @@ class PluginLoader(
                     emptyList()
                 }
 
+                // 插件可传原始参考图路径，宿主经 /ai/encode-vibe 编码为 vibe（NAI 风格迁移）
+                val rawRefPaths = buildList {
+                    obj.optJSONArray("referenceImages")?.let { arr ->
+                        for (i in 0 until arr.length()) {
+                            val p = arr.optString(i)
+                            if (p.isNotBlank()) add(p)
+                        }
+                    }
+                }
+
                 val params = me.rerere.ai.provider.ImageGenerationParams(
                     model = model,
                     prompt = prompt,
@@ -397,6 +442,7 @@ class PluginLoader(
                     width = width,
                     height = height,
                     negativePrompt = negative.ifBlank { null },
+                    referenceImages = rawRefPaths,
                     cachedVibes = cachedVibes,
                     naiParameters = naiParams,
                     customBody = customBodies,

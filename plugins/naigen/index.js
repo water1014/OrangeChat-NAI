@@ -1,8 +1,17 @@
 /**
  * NAI 生图插件（柏宝绘风格）
  *
- * 插件只负责「提示词拼装 + 参数决策」，真正的请求、解包、落盘由宿主的
- * __imageBridge('generate', ...) 完成，所以不需要在 JS 里处理 zip / base64。
+ * 插件只负责「提示词拼装 + 参数决策 + NAI 原生参数拼装」，真正的请求、解包、落盘由宿主的
+ * __imageBridge('generate', ...) 完成，所以不需要在 JS 里处理 zip / base64 落盘。
+ *
+ * 2024-11 对齐 OVONovelAI 参考站后新增能力：
+ *  - 完整 NAI 原生参数（cfg_rescale / params_version / prefer_brownian / controlnet_strength /
+ *    add_original_image / legacy 系列 / use_coords / normalize_reference_strength_multiple /
+ *    skip_cfg_above_sigma（Variety+）等），统一塞进 payload.extra，由宿主桥透传进 NAI 请求体。
+ *  - 图生图（img2img）：image + strength + noise + extra_noise_seed。
+ *  - 局部重绘（infill）：mask（黑白蒙版，白色=重绘区），自动切 action=infill 并追加 -inpainting 模型。
+ *  - Vibe 风格迁移：原始参考图（路径交宿主编码 / base64 走插件侧 /ai/encode-vibe）。
+ *  - V4.5 角色参考（director reference）：crefImages + 强度 + 保真 + 风格感知。
  */
 
 // 对齐柏宝绘：4-5 系列官方负面（中性，不含性别/身材/题材偏好，只排缺陷与画质问题）
@@ -172,6 +181,50 @@ function parseVibes() {
   }
 }
 
+/** 把 data:image/...;base64,XXX 或裸 base64 抽出裸 base64 */
+function stripB64(s) {
+  if (!s || typeof s !== 'string') return '';
+  var i = s.indexOf(',');
+  return i >= 0 ? s.slice(i + 1) : s;
+}
+
+/** 判定一个参考图字符串是本地路径还是 base64/dataURL */
+function isImagePath(s) {
+  if (!s || typeof s !== 'string') return false;
+  if (s.indexOf('base64,') >= 0 || s.indexOf('data:') === 0) return false;
+  return /\.(png|jpe?g|webp|bmp)$/i.test(s.trim());
+}
+
+/**
+ * 插件侧 /ai/encode-vibe：把一张 base64 原图编码成 cached vibe 的 data。
+ * 宿主对 NAI4+ 的 cached vibe 期望 {cache_secret_key, data}，其中 data 即编码后的 base64 特征。
+ * 这里直接取响应里的 data 字段返回，交宿主包装。失败返回 ''（优雅跳过）。
+ */
+function encodeVibeB64(b64, model) {
+  try {
+    var base = String(cfg('baseUrl', '')).trim().replace(/\/+$/, '').replace(/\/v1$/, '');
+    var key = String(cfg('apiKey', '')).trim();
+    if (!base || !key || !b64) return '';
+    var body = JSON.stringify({ image: b64, model: model, information_extracted: 1 });
+    var r = fetch(base + '/ai/encode-vibe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+      body: body
+    });
+    if (!r || !r.ok) return '';
+    var txt = r.text ? r.text() : String(r.body || '');
+    var j;
+    try { j = JSON.parse(txt); } catch (e) { return ''; }
+    // 多种返回形态都收：{cached_vibe:{data}} / {data} / {cached_vibe:{cache_secret_key,data}}
+    var data = '';
+    if (j && j.cached_vibe && j.cached_vibe.data) data = j.cached_vibe.data;
+    else if (j && j.data) data = j.data;
+    return typeof data === 'string' && data.length > 64 ? data : '';
+  } catch (e) {
+    return '';
+  }
+}
+
 function hasArtist(text) {
   if (!text) return false;
   var lower = text.toLowerCase();
@@ -249,14 +302,99 @@ exports.nai_generate = function (params) {
     negativeField = '';
   }
 
+  var model = cfg('model', 'nai-diffusion-4-5-full');
   var vibes = plain ? [] : parseVibes();
+
+  // ---- 图生图 / 局部重绘（img2img & infill）----
+  // 参考站：img2img 用 image+strength+noise+extra_noise_seed；蒙版存在则 infill（保留 image，删 strength/noise）。
+  var imageB64 = stripB64(params.image || '');
+  var maskB64 = stripB64(params.mask || '');
+  var isInfill = !!maskB64;
+  var isImg2Img = !!imageB64 && !isInfill;
+
+  // ---- Vibe 风格迁移：原始参考图 ----
+  // 路径 → 交给宿主 /ai/encode-vibe 编码；base64/dataURL → 插件侧编码。
+  var refPaths = [];
+  var refExtras = [];
+  if (!plain && params.referenceImages) {
+    var refs = Array.isArray(params.referenceImages) ? params.referenceImages : [params.referenceImages];
+    for (var ri = 0; ri < refs.length; ri++) {
+      var ref = refs[ri];
+      if (!ref) continue;
+      if (isImagePath(ref)) {
+        refPaths.push(String(ref).trim());
+      } else {
+        var eb = stripB64(ref);
+        if (eb) {
+          var enc = encodeVibeB64(eb, model);
+          if (enc) refExtras.push({ encoded: enc, strength: 0.6, model: model, enabled: true });
+        }
+      }
+    }
+  }
+  vibes = vibes.concat(refExtras);
+
+  // ---- V4.5 角色参考（director reference）----
+  // 参考站：director_reference_images（裸 base64）+ descriptions + strength/fidelity。
+  var extra = {};
+  if (!plain) {
+    var crefStrength = params.crefStrength !== undefined ? Number(params.crefStrength) : Number(cfg('crefStrength', 1));
+    var crefFidelity = params.crefFidelity !== undefined ? Number(params.crefFidelity) : Number(cfg('crefFidelity', 1));
+    var crefStyle = params.crefStyle !== undefined ? (params.crefStyle === true || params.crefStyle === 'true') : (cfg('crefStyle', true) === true || cfg('crefStyle') === 'true');
+    var crefImages = params.crefImages ? (Array.isArray(params.crefImages) ? params.crefImages : [params.crefImages]) : [];
+    var crefs = [];
+    for (var ci = 0; ci < crefImages.length; ci++) {
+      var cb = stripB64(crefImages[ci]);
+      if (cb) crefs.push(cb);
+    }
+    if (crefs.length) {
+      var descs = [];
+      for (var di = 0; di < crefs.length; di++) {
+        descs.push({ caption: { base_caption: crefStyle ? 'character&style' : 'character', char_captions: [] }, legacy_uc: false });
+      }
+      extra.director_reference_images = crefs;
+      extra.director_reference_descriptions = descs;
+      extra.director_reference_information_extracted = crefs.map(function () { return 1; });
+      extra.director_reference_strength_values = crefs.map(function () { return Math.max(0, Math.min(1, isNaN(crefStrength) ? 1 : crefStrength)); });
+      // fidelity 越高，secondary（风格）越弱：secondary = 1 - fidelity
+      extra.director_reference_secondary_strength_values = crefs.map(function () { return Math.max(0, Math.min(1, 1 - (isNaN(crefFidelity) ? 1 : crefFidelity))); });
+    }
+  }
+
+  // ---- 图生图 / 局部重绘字段（仅在 NAI 原生 / AUTO 下透传，OpenAI 兼容忽略）----
+  if (isNai && imageB64) {
+    extra.image = imageB64;
+    extra.extra_noise_seed =
+      Number(params.seed === undefined ? -1 : params.seed) >= 0 ? Number(params.seed) : Math.floor(Math.random() * 4294967295);
+    if (isInfill) {
+      // infill：保留 image，写 mask，忽略 strength/noise；模型自动追加 -inpainting（宿主处理）
+      extra.mask = maskB64;
+    } else {
+      extra.strength = params.strength !== undefined ? Number(params.strength) : Number(cfg('i2iStrength', 0.7));
+      extra.noise = params.noise !== undefined ? Number(params.noise) : Number(cfg('i2iNoise', 0));
+    }
+  }
+
+  // ---- 完整 NAI 原生参数（对齐参考站 / 宿主默认）----
+  // 这些值会由宿主桥透传进 NAI 请求体的 parameters，覆盖宿主默认值，便于调参。
+  extra.cfg_rescale = Number(cfg('rescale', 0));
+  extra.controlnet_strength = 1;
+  extra.add_original_image = true;
+  extra.legacy = false;
+  extra.legacy_uc = false;
+  extra.legacy_v3_extend = false;
+  extra.normalize_reference_strength_multiple =
+    cfg('normalizeVibe', true) === true || cfg('normalizeVibe') === 'true';
+  extra.use_coords =
+    params.useCoords === true || params.useCoords === 'true' || cfg('useCoords', false) === true || cfg('useCoords') === 'true';
 
   var payload = {
     baseUrl: cfg('baseUrl', ''),
     apiKey: cfg('apiKey', ''),
     protocol: protocol,
-    model: cfg('model', 'nai-diffusion-4-5-full'),
+    model: model,
     vibes: vibes,
+    referenceImages: refPaths,
     prompt: prompt,
     negative: negativeField,
     width: Number(params.width || cfg('width', 832)),
@@ -273,7 +411,9 @@ exports.nai_generate = function (params) {
     varietyBoost: cfg('varietyBoost', false) === true || String(cfg('varietyBoost')) === 'true',
     dynamicThresholding: cfg('dynamicThresholding', false) === true || String(cfg('dynamicThresholding')) === 'true',
     // 严格模式下 OpenAI 兼容只发 model/prompt/n/size，避免未知字段被判 400
-    strictOpenAI: !(cfg('strictOpenAI', true) === false || String(cfg('strictOpenAI')) === 'false')
+    strictOpenAI: !(cfg('strictOpenAI', true) === false || String(cfg('strictOpenAI')) === 'false'),
+    // 新增：整段 NAI 原生参数透传（图生图 / 重绘 / 角色参考 / rescale 等全在这里）
+    extra: extra
   };
 
   if (!payload.baseUrl) {
@@ -300,6 +440,10 @@ exports.nai_generate = function (params) {
     cfg_scale: payload.scale,
     sampler: payload.sampler,
     vibe_count: vibes.length,
+    ref_count: refPaths.length + refExtras.length,
+    cref_count: (extra.director_reference_images || []).length,
+    img2img: isImg2Img,
+    infill: isInfill,
     size: payload.width + 'x' + payload.height,
     seeds: res.seeds || [],
     images: res.images || [],
