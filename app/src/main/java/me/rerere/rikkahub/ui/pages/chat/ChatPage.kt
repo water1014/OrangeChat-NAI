@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
@@ -600,6 +602,7 @@ private fun ChatPageContent(
                 )
             },
             bottomBar = {
+                CompanionDock {
                 ChatInput(
                     state = inputState,
                     loading = loadingJob != null,
@@ -692,84 +695,102 @@ private fun ChatPageContent(
                         vm.handleCompressContext(additionalPrompt, targetTokens, keepRecentMessages)
                     },
                 )
+                }
             },
             containerColor = Color.Transparent,
-        ) { innerPadding ->
-            ChatList(
-                innerPadding = innerPadding,
-                conversation = conversation,
-                state = chatListState,
-                loading = loadingJob != null,
-                processingStatus = processingStatus,
-                previewMode = previewMode,
-                settings = setting,
-                hazeState = hazeState,
-                errors = errors,
-                onDismissError = onDismissError,
-                onClearAllErrors = onClearAllErrors,
-                onRegenerate = {
-                    vm.regenerateAtMessage(it)
-                },
-                onEdit = {
-                    inputState.editingMessage = it.id
-                    inputState.setContents(it.parts)
-                },
-                onForkMessage = {
-                    scope.launch {
-                        val fork = vm.forkMessage(message = it)
-                        navigateToChatPage(navController, chatId = fork.id)
-                    }
-                },
-                onDelete = {
-                    if (loadingJob != null) {
-                        vm.showDeleteBlockedWhileGeneratingError()
-                    } else {
-                        vm.deleteMessage(it)
-                    }
-                },
-                onUpdateMessage = { newNode ->
-                    vm.updateConversation(
-                        conversation.copy(
-                            messageNodes = conversation.messageNodes.map { node ->
-                                if (node.id == newNode.id) {
-                                    newNode
-                                } else {
-                                    node
-                                }
+        ) { _ ->
+            Column(
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                if (conversation.messageNodes.isEmpty()) {
+                    CompanionHeroCard(assistant = setting.getCurrentAssistant())
+                }
+                RearrangeableFeatureWidgets(
+                    navController = navController,
+                    assistantId = setting.getCurrentAssistant().id.toString(),
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                ) {
+                    ChatList(
+                        innerPadding = PaddingValues(0.dp),
+                        conversation = conversation,
+                        state = chatListState,
+                        loading = loadingJob != null,
+                        processingStatus = processingStatus,
+                        previewMode = previewMode,
+                        settings = setting,
+                        hazeState = hazeState,
+                        errors = errors,
+                        onDismissError = onDismissError,
+                        onClearAllErrors = onClearAllErrors,
+                        onRegenerate = {
+                            vm.regenerateAtMessage(it)
+                        },
+                        onEdit = {
+                            inputState.editingMessage = it.id
+                            inputState.setContents(it.parts)
+                        },
+                        onForkMessage = {
+                            scope.launch {
+                                val fork = vm.forkMessage(message = it)
+                                navigateToChatPage(navController, chatId = fork.id)
                             }
-                        ))
-                    vm.saveConversationAsync()
-                },
-                onClickSuggestion = { suggestion ->
-                    inputState.editingMessage = null
-                    inputState.setMessageText(suggestion)
-                },
-                onTranslate = { message, locale ->
-                    vm.translateMessage(message, locale)
-                },
-                onClearTranslation = { message ->
-                    vm.clearTranslationField(message.id)
-                },
-                onJumpToMessage = { index ->
-                    previewMode = false
-                    scope.launch {
-                        chatListState.animateScrollToItem(index)
-                    }
-                },
-                onToolApproval = { toolCallId, approved, reason ->
-                    vm.handleToolApproval(toolCallId, approved, reason)
-                },
-                onToolAnswer = { toolCallId, answer ->
-                    vm.handleToolAnswer(toolCallId, answer)
-                },
-                onToggleFavorite = { node ->
-                    vm.toggleMessageFavorite(node)
-                },
-                onConversationSystemPromptChange = { newPrompt ->
-                    vm.updateConversation(conversation.copy(customSystemPrompt = newPrompt))
-                    vm.saveConversationAsync()
-                },
-            )
+                        },
+                        onDelete = {
+                            if (loadingJob != null) {
+                                vm.showDeleteBlockedWhileGeneratingError()
+                            } else {
+                                vm.deleteMessage(it)
+                            }
+                        },
+                        onUpdateMessage = { newNode ->
+                            vm.updateConversation(
+                                conversation.copy(
+                                    messageNodes = conversation.messageNodes.map { node ->
+                                        if (node.id == newNode.id) {
+                                            newNode
+                                        } else {
+                                            node
+                                        }
+                                    }
+                                ))
+                            vm.saveConversationAsync()
+                        },
+                        onClickSuggestion = { suggestion ->
+                            inputState.editingMessage = null
+                            inputState.setMessageText(suggestion)
+                        },
+                        onTranslate = { message, locale ->
+                            vm.translateMessage(message, locale)
+                        },
+                        onClearTranslation = { message ->
+                            vm.clearTranslationField(message.id)
+                        },
+                        onJumpToMessage = { index ->
+                            previewMode = false
+                            scope.launch {
+                                chatListState.animateScrollToItem(index)
+                            }
+                        },
+                        onToolApproval = { toolCallId, approved, reason ->
+                            vm.handleToolApproval(toolCallId, approved, reason)
+                        },
+                        onToolAnswer = { toolCallId, answer ->
+                            vm.handleToolAnswer(toolCallId, answer)
+                        },
+                        onToggleFavorite = { node ->
+                            vm.toggleMessageFavorite(node)
+                        },
+                        onConversationSystemPromptChange = { newPrompt ->
+                            vm.updateConversation(conversation.copy(customSystemPrompt = newPrompt))
+                            vm.saveConversationAsync()
+                        },
+                    )
+                }
+            }
         }
         }
 
