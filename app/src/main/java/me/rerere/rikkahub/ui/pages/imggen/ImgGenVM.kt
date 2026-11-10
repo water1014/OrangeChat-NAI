@@ -304,8 +304,11 @@ class ImgGenVM(
         val sampler = when (nai.sampler) {
             "Euler Ancestral" -> "k_euler_ancestral"
             "Euler" -> "k_euler"
+            "DPM++ 2S Ancestral" -> "k_dpmpp_2s_ancestral"
             "DPM++ 2M SDE" -> "k_dpmpp_2m_sde"
+            "DPM++ 2M" -> "k_dpmpp_2m"
             "DPM++ SDE" -> "k_dpmpp_sde"
+            "DDIM" -> "ddim_v3"
             else -> "k_euler_ancestral"
         }
         val noise = when (nai.noiseSchedule) {
@@ -326,8 +329,11 @@ class ImgGenVM(
             put("sm", nai.smea)
             put("sm_dyn", nai.smeaDyn)
             put("qualityToggle", nai.qualityTags)
-            put("variety_boost", nai.varietyBoost)
+            if (nai.varietyBoost) put("skip_cfg_above_sigma", 19) else put("skip_cfg_above_sigma", kotlinx.serialization.json.JsonNull)
             put("dynamic_thresholding", nai.dynamicThresholding)
+            put("use_coords", nai.useCoords)
+            put("normalize_reference_strength_multiple", nai.normalizeReferenceStrength)
+            put("prefer_brownian", nai.preferBrownian)
         }
     }
 

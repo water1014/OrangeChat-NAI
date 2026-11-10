@@ -904,9 +904,17 @@ fun SettingImageGenPage() {
                         )
                         ChipRow(
                             label = "采样器",
-                            options = listOf("Euler Ancestral", "Euler", "DPM++ 2M SDE", "DPM++ SDE"),
+                            options = listOf(
+                                "Euler Ancestral",
+                                "Euler",
+                                "DPM++ 2S Ancestral",
+                                "DPM++ 2M SDE",
+                                "DPM++ 2M",
+                                "DPM++ SDE",
+                                "DDIM",
+                            ),
                             selected = nai.sampler,
-                            hint = "NAI 常用 Euler Ancestral，想要更锐利可换 DPM++",
+                            hint = "对齐官方前端的 7 种采样器；常用 Euler Ancestral",
                             onSelect = {
                                 nai = nai.copy(sampler = it)
                                 store.setNaiParams(nai)
@@ -983,12 +991,24 @@ fun SettingImageGenPage() {
                             nai = nai.copy(smeaDyn = it)
                             store.setNaiParams(nai)
                         }
-                        SwitchRow("Variety+", "提升画面多样性、减少同质化（V4 系列有效）", nai.varietyBoost) {
+                        SwitchRow("Variety+", "提升画面多样性（官方字段 skip_cfg_above_sigma=19，V4 系列有效）", nai.varietyBoost) {
                             nai = nai.copy(varietyBoost = it)
                             store.setNaiParams(nai)
                         }
                         SwitchRow("Dynamic Thresholding", "动态阈值，高 CFG 时抑制过曝", nai.dynamicThresholding) {
                             nai = nai.copy(dynamicThresholding = it)
+                            store.setNaiParams(nai)
+                        }
+                        SwitchRow("Use Coords", "启用坐标 tagging（与官方前端 use_coords 一致）", nai.useCoords) {
+                            nai = nai.copy(useCoords = it)
+                            store.setNaiParams(nai)
+                        }
+                        SwitchRow("归一化 Vibe 强度", "多张参考图时归一化强度（normalize_reference_strength_multiple）", nai.normalizeReferenceStrength) {
+                            nai = nai.copy(normalizeReferenceStrength = it)
+                            store.setNaiParams(nai)
+                        }
+                        SwitchRow("Prefer Brownian", "欧拉祖先采样器走 Brownian 噪声轨迹（prefer_brownian）", nai.preferBrownian) {
+                            nai = nai.copy(preferBrownian = it)
                             store.setNaiParams(nai)
                         }
                     }

@@ -2324,9 +2324,17 @@ private fun NaiTab(
 
             NaiChipRow(
                 label = "采样器 Sampler",
-                options = listOf("Euler Ancestral", "Euler", "DPM++ 2M SDE", "DPM++ SDE"),
+                options = listOf(
+                    "Euler Ancestral",
+                    "Euler",
+                    "DPM++ 2S Ancestral",
+                    "DPM++ 2M SDE",
+                    "DPM++ 2M",
+                    "DPM++ SDE",
+                    "DDIM",
+                ),
                 selected = nai.sampler,
-                shortLabel = { it.substringBefore(" ").take(12) },
+                shortLabel = { it.removePrefix("DPM++ ").take(12) },
                 onSelect = { v -> vm.updateNaiParams { it.copy(sampler = v) } },
             )
 
@@ -2409,7 +2417,7 @@ private fun NaiTab(
             )
             NaiSwitchRow(
                 title = "Variety+",
-                desc = "提升画面多样性、减少同质化（NAI 4.5）",
+                desc = "提升画面多样性（官方字段 skip_cfg_above_sigma=19）",
                 checked = nai.varietyBoost,
                 onChange = { on -> vm.updateNaiParams { it.copy(varietyBoost = on) } },
             )
@@ -2418,6 +2426,24 @@ private fun NaiTab(
                 desc = "动态阈值，高 CFG 时抑制过曝",
                 checked = nai.dynamicThresholding,
                 onChange = { on -> vm.updateNaiParams { it.copy(dynamicThresholding = on) } },
+            )
+            NaiSwitchRow(
+                title = "Use Coords",
+                desc = "启用坐标 tagging（use_coords）",
+                checked = nai.useCoords,
+                onChange = { on -> vm.updateNaiParams { it.copy(useCoords = on) } },
+            )
+            NaiSwitchRow(
+                title = "归一化 Vibe 强度",
+                desc = "多参考图归一化强度（normalize_reference_strength_multiple）",
+                checked = nai.normalizeReferenceStrength,
+                onChange = { on -> vm.updateNaiParams { it.copy(normalizeReferenceStrength = on) } },
+            )
+            NaiSwitchRow(
+                title = "Prefer Brownian",
+                desc = "欧拉祖先采样器 Brownian 噪声轨迹（prefer_brownian）",
+                checked = nai.preferBrownian,
+                onChange = { on -> vm.updateNaiParams { it.copy(preferBrownian = on) } },
             )
         }
 

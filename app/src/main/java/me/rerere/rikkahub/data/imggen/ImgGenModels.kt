@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.data.imggen
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -97,14 +98,21 @@ data class NaiParams(
     val qualityTags: Boolean = true,
     val varietyBoost: Boolean = false,
     val dynamicThresholding: Boolean = false,
+    // 对齐 NovelAI 官方前端（OVONovelAI）的原生参数开关
+    val useCoords: Boolean = false,
+    val normalizeReferenceStrength: Boolean = true,
+    val preferBrownian: Boolean = true,
 ) {
     /** 转成 NAI 官方 parameters 字段，面板与 AI 工具共用 */
     fun toJsonObject(): JsonObject = buildJsonObject {
         val samplerValue = when (sampler) {
             "Euler Ancestral" -> "k_euler_ancestral"
             "Euler" -> "k_euler"
+            "DPM++ 2S Ancestral" -> "k_dpmpp_2s_ancestral"
             "DPM++ 2M SDE" -> "k_dpmpp_2m_sde"
+            "DPM++ 2M" -> "k_dpmpp_2m"
             "DPM++ SDE" -> "k_dpmpp_sde"
+            "DDIM" -> "ddim_v3"
             else -> "k_euler_ancestral"
         }
         val noiseValue = when (noiseSchedule) {
@@ -124,7 +132,12 @@ data class NaiParams(
         put("sm", smea)
         put("sm_dyn", smeaDyn)
         put("qualityToggle", qualityTags)
-        put("variety_boost", varietyBoost)
+        // Variety+ 的官方字段是 skip_cfg_above_sigma（开=19，关=null）。
+        // 旧实现误发已废弃的 variety_boost，服务端不认，导致开关点了没效果。
+        if (varietyBoost) put("skip_cfg_above_sigma", 19) else put("skip_cfg_above_sigma", JsonNull)
         put("dynamic_thresholding", dynamicThresholding)
+        put("use_coords", useCoords)
+        put("normalize_reference_strength_multiple", normalizeReferenceStrength)
+        put("prefer_brownian", preferBrownian)
     }
 }

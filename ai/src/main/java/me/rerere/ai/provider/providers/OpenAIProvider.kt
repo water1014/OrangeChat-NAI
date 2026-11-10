@@ -506,6 +506,8 @@ private suspend fun OpenAIProvider.generateNaiImage(
         } else {
             putJsonArray("reference_image_multiple_cached") { }
         }
+        // v4_prompt 内部 use_coords 跟随设置页开关（官方前端两处一致），避免顶层生效、内部仍写死 false
+        val panelUseCoords = params.naiParameters?.get("use_coords")?.jsonPrimitive?.content == "true"
         put(
             "v4_prompt",
             buildJsonObject {
@@ -516,7 +518,7 @@ private suspend fun OpenAIProvider.generateNaiImage(
                         put("char_captions", buildJsonArray { })
                     }
                 )
-                put("use_coords", false)
+                put("use_coords", panelUseCoords)
                 put("use_order", true)
             }
         )
