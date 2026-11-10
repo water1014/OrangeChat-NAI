@@ -115,52 +115,110 @@ private fun defaultWidgets(assistantId: String): List<CompanionWidget> = listOf(
 
 /**
  * 中央角色卡：圆形头像 + 名称 + 副标题。对齐参考站「Aru / Start wherever you like.」。
+ * [compact] 为 true 时（已有对话）渲染为顶部一行小卡（小头像 + 名称），让伴侣画布感在对话中常驻；
+ * 为 false 时（空对话）渲染为居中的大角色卡。
  */
 @Composable
 fun CompanionHeroCard(
     assistant: Assistant,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Surface(
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp,
+    if (compact) {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxSize(),
+            Surface(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 3.dp,
+                shadowElevation = 3.dp,
             ) {
-                when (val av = assistant.avatar) {
-                    is Avatar.Image -> {
-                        AsyncImage(
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    val av = assistant.avatar
+                    when (av) {
+                        is Avatar.Image -> AsyncImage(
                             model = av.url,
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                         )
-                    }
 
-                    is Avatar.Emoji -> {
-                        Text(
+                        is Avatar.Emoji -> Text(
+                            text = av.content,
+                            fontSize = 18.sp,
+                            textAlign = TextAlign.Center,
+                        )
+
+                        is Avatar.Dummy -> Text(
+                            text = assistant.name
+                                .ifBlank { "A" }
+                                .firstOrNull()
+                                ?.toString()
+                                ?.uppercase()
+                                ?: "A",
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = assistant.name.ifBlank { "助手" },
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    } else {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .size(96.dp)
+                    .clip(CircleShape),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp,
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    val av = assistant.avatar
+                    when (av) {
+                        is Avatar.Image -> AsyncImage(
+                            model = av.url,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+
+                        is Avatar.Emoji -> Text(
                             text = av.content,
                             fontSize = 44.sp,
                             textAlign = TextAlign.Center,
                         )
-                    }
 
-                    is Avatar.Dummy -> {
-                        Text(
+                        is Avatar.Dummy -> Text(
                             text = assistant.name
                                 .ifBlank { "A" }
                                 .firstOrNull()
@@ -173,23 +231,23 @@ fun CompanionHeroCard(
                     }
                 }
             }
+
+            Text(
+                text = assistant.name.ifBlank { "助手" },
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            Text(
+                text = "Start wherever you like.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-
-        Text(
-            text = assistant.name.ifBlank { "助手" },
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-
-        Text(
-            text = "Start wherever you like.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 

@@ -697,13 +697,14 @@ private fun ChatPageContent(
                 }
             },
             containerColor = Color.Transparent,
-        ) { _ ->
+            ) { _ ->
             Column(
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (conversation.messageNodes.isEmpty()) {
-                    CompanionHeroCard(assistant = setting.getCurrentAssistant())
-                }
+                CompanionHeroCard(
+                    assistant = setting.getCurrentAssistant(),
+                    compact = conversation.messageNodes.isNotEmpty(),
+                )
                 RearrangeableFeatureWidgets(
                     navController = navController,
                     assistantId = setting.getCurrentAssistant().id.toString(),
