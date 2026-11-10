@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,18 +46,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Brain01
+import me.rerere.hugeicons.stroke.Clock02
 import me.rerere.hugeicons.stroke.Edit03
+import me.rerere.hugeicons.stroke.Idea01
 import me.rerere.hugeicons.stroke.MagicWand01
-import me.rerere.hugeicons.stroke.Sparkles
-import me.rerere.hugeicons.stroke.TransactionHistory
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.context.Navigator
 import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.draggableHandle
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 /**
@@ -77,37 +78,37 @@ private fun defaultWidgets(assistantId: String): List<CompanionWidget> = listOf(
     CompanionWidget(
         id = "instructions",
         label = "指令",
-        icon = Edit03,
+        icon = HugeIcons.Edit03,
         navigate = { it.navigate(Screen.AssistantPrompt(id = assistantId)) },
     ),
     CompanionWidget(
         id = "theme",
         label = "主题",
-        icon = MagicWand01,
+        icon = HugeIcons.MagicWand01,
         navigate = { it.navigate(Screen.SettingTheme) },
     ),
     CompanionWidget(
         id = "proactive",
         label = "主动",
-        icon = Sparkles,
+        icon = HugeIcons.Idea01,
         navigate = { it.navigate(Screen.SettingProactiveMessage) },
     ),
     CompanionWidget(
         id = "lorebook",
         label = "世界书",
-        icon = Book01,
+        icon = HugeIcons.Book01,
         navigate = { it.navigate(Screen.AssistantInjections(id = assistantId)) },
     ),
     CompanionWidget(
         id = "memory",
         label = "记忆",
-        icon = Brain01,
+        icon = HugeIcons.Brain01,
         navigate = { it.navigate(Screen.MemoryBank) },
     ),
     CompanionWidget(
         id = "echo",
         label = "对话回响",
-        icon = TransactionHistory,
+        icon = HugeIcons.Clock02,
         navigate = { it.navigate(Screen.History) },
     ),
 )
@@ -214,9 +215,7 @@ fun RearrangeableFeatureWidgets(
 
     LazyRow(
         state = lazyListState,
-        modifier = modifier
-            .fillMaxWidth()
-            .then(reorderableState.modifier),
+        modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -234,6 +233,7 @@ fun RearrangeableFeatureWidgets(
                     isDragging = isDragging,
                     scale = scale,
                     onClick = { widget.navigate(navController) },
+                    modifier = Modifier.longPressDraggableHandle(),
                 )
             }
         }
@@ -246,12 +246,11 @@ private fun WidgetCard(
     isDragging: Boolean,
     scale: Float,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
-        modifier = Modifier
-            .scale(scale)
-            .draggableHandle(),
+        modifier = modifier.scale(scale),
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
         tonalElevation = if (isDragging) 8.dp else 2.dp,
