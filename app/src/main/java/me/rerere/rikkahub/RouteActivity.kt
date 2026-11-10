@@ -73,6 +73,7 @@ import com.dokar.sonner.rememberToasterState
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import me.rerere.highlight.Highlighter
+import me.rerere.rikkahub.ui.pages.home.CompanionHomePage
 import me.rerere.highlight.LocalHighlighter
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getAssistantById
@@ -368,16 +369,8 @@ class RouteActivity : ComponentActivity() {
         val eventBus = koinInject<AppEventBus>()
         val migrationState by DatabaseMigrationTracker.state.collectAsStateWithLifecycle()
 
-        val startScreen = Screen.Chat(
-            id = if (readBooleanPreference("create_new_conversation_on_start", true)) {
-                Uuid.random().toString()
-            } else {
-                readStringPreference(
-                    "lastConversationId",
-                    Uuid.random().toString()
-                ) ?: Uuid.random().toString()
-            }
-        )
+        // 启动页改为全新伴侣首页（玻璃画布）；点开对话才进入聊天界面
+        val startScreen = Screen.Home
 
         val backStack = rememberNavBackStack(startScreen)
         SideEffect { this@RouteActivity.navStack = backStack }
@@ -468,6 +461,10 @@ class RouteActivity : ComponentActivity() {
                                     slideOutHorizontally { it }
                             },
                             entryProvider = entryProvider {
+                            entry<Screen.Home> {
+                                CompanionHomePage()
+                            }
+
                             entry<Screen.Chat>(
                                 metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
                                         + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
@@ -915,6 +912,9 @@ class RouteActivity : ComponentActivity() {
 }
 
 sealed interface Screen : NavKey {
+    @Serializable
+    data object Home : Screen
+
     @Serializable
     data class Chat(
         val id: String,
