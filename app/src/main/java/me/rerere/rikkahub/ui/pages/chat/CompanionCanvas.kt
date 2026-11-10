@@ -3,16 +3,18 @@
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
  *
- * 伴侣画布组件（对齐参考站 OVONovelAI 的自由画布 + dock 风格）
- * - CompanionHeroCard：中央角色卡（圆形头像 + 名称 + 副标题）
- * - RearrangeableFeatureWidgets：可丝滑重排的功能组件 ribbon（指令/主题/主动/世界书/记忆/对话回响）
- * - CompanionDock：把现有 ChatInput 包进玻璃质感停靠栏外壳
+ * 伴侣画布组件（对齐参考站的「沉浸式玻璃画布 + dock」风格）
+ * - CompanionHeroCard：中央大玻璃角色卡（圆形头像 + 名称 + 副标题）
+ * - DraggableGlassWidgets：散落在画布上、可自由丝滑拖动的玻璃组件
+ *   （指令/主题/主动/世界书/记忆/对话回响 + 空对话时的日期卡/对话卡）
+ * - CompanionDock：胶囊状玻璃停靠栏外壳，承载现有 ChatInput
  */
 
 package me.rerere.rikkahub.ui.pages.chat
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,11 +22,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,12 +41,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import kotlin.math.roundToInt
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Book01
 import me.rerere.hugeicons.stroke.Brain01
@@ -57,66 +65,48 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.context.Navigator
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
 
-/**
- * 单个可重排功能组件的描述。
- * [navigate] 接收 Navigator，点击时跳转到对应真实页面（指令→提示词、世界书→注入、主动→主动消息等）。
- */
-private data class CompanionWidget(
+/** 玻璃底色：贴合参考站深色壁纸上的半透明毛玻璃质感。 */
+@Composable
+private fun glassTint(): Color =
+    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.45f)
+
+/** 玻璃描边高光。 */
+@Composable
+private fun glassBorder(): Color = Color.White.copy(alpha = 0.20f)
+
+/** 单个可拖动功能组件的描述。点击跳转到橘瓣里的真实页面。 */
+private data class GlassWidget(
     val id: String,
     val label: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val navigate: (Navigator) -> Unit,
 )
 
-/**
- * 默认功能组件列表。assistantId 用于需要绑定当前助手的页面（指令/世界书）。
- */
-private fun defaultWidgets(assistantId: String): List<CompanionWidget> = listOf(
-    CompanionWidget(
-        id = "instructions",
-        label = "指令",
-        icon = HugeIcons.Edit03,
-        navigate = { it.navigate(Screen.AssistantPrompt(id = assistantId)) },
-    ),
-    CompanionWidget(
-        id = "theme",
-        label = "主题",
-        icon = HugeIcons.MagicWand01,
-        navigate = { it.navigate(Screen.SettingTheme) },
-    ),
-    CompanionWidget(
-        id = "proactive",
-        label = "主动",
-        icon = HugeIcons.Idea01,
-        navigate = { it.navigate(Screen.SettingProactiveMessage) },
-    ),
-    CompanionWidget(
-        id = "lorebook",
-        label = "世界书",
-        icon = HugeIcons.Book01,
-        navigate = { it.navigate(Screen.AssistantInjections(id = assistantId)) },
-    ),
-    CompanionWidget(
-        id = "memory",
-        label = "记忆",
-        icon = HugeIcons.Brain01,
-        navigate = { it.navigate(Screen.MemoryBank) },
-    ),
-    CompanionWidget(
-        id = "echo",
-        label = "对话回响",
-        icon = HugeIcons.Clock02,
-        navigate = { it.navigate(Screen.History) },
-    ),
+private fun defaultGlassWidgets(assistantId: String): List<GlassWidget> = listOf(
+    GlassWidget("instructions", "指令", HugeIcons.Edit03) {
+        it.navigate(Screen.AssistantPrompt(id = assistantId))
+    },
+    GlassWidget("theme", "主题", HugeIcons.MagicWand01) {
+        it.navigate(Screen.SettingTheme)
+    },
+    GlassWidget("proactive", "主动", HugeIcons.Idea01) {
+        it.navigate(Screen.SettingProactiveMessage)
+    },
+    GlassWidget("lorebook", "世界书", HugeIcons.Book01) {
+        it.navigate(Screen.AssistantInjections(id = assistantId))
+    },
+    GlassWidget("memory", "记忆", HugeIcons.Brain01) {
+        it.navigate(Screen.MemoryBank)
+    },
+    GlassWidget("echo", "对话回响", HugeIcons.Clock02) {
+        it.navigate(Screen.History)
+    },
 )
 
 /**
- * 中央角色卡：圆形头像 + 名称 + 副标题。对齐参考站「Aru / Start wherever you like.」。
- * [compact] 为 true 时（已有对话）渲染为顶部一行小卡（小头像 + 名称），让伴侣画布感在对话中常驻；
- * 为 false 时（空对话）渲染为居中的大角色卡。
+ * 中央角色卡：横向大玻璃卡（圆形头像 + 名称），卡片下方是副标题。
+ * [compact] 为 true 时（已有对话）渲染为顶部一行小胶囊，让画布感在对话中常驻。
  */
 @Composable
 fun CompanionHeroCard(
@@ -125,230 +115,347 @@ fun CompanionHeroCard(
     compact: Boolean = false,
 ) {
     if (compact) {
-        Row(
+        Surface(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = glassTint(),
+            border = BorderStroke(1.dp, glassBorder()),
+            tonalElevation = 0.dp,
+            shadowElevation = 2.dp,
         ) {
-            Surface(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 3.dp,
-                shadowElevation = 3.dp,
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    val av = assistant.avatar
-                    when (av) {
-                        is Avatar.Image -> AsyncImage(
-                            model = av.url,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-
-                        is Avatar.Emoji -> Text(
-                            text = av.content,
-                            fontSize = 18.sp,
-                            textAlign = TextAlign.Center,
-                        )
-
-                        is Avatar.Dummy -> Text(
-                            text = assistant.name
-                                .ifBlank { "A" }
-                                .firstOrNull()
-                                ?.toString()
-                                ?.uppercase()
-                                ?: "A",
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+                HeroAvatar(assistant, 34.dp)
+                Text(
+                    text = assistant.name.ifBlank { "助手" },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-
-            Text(
-                text = assistant.name.ifBlank { "助手" },
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     } else {
         Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(vertical = 24.dp),
+            modifier = modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Surface(
                 modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 6.dp,
-                shadowElevation = 8.dp,
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                shape = RoundedCornerShape(30.dp),
+                color = glassTint(),
+                border = BorderStroke(1.dp, glassBorder()),
+                tonalElevation = 0.dp,
+                shadowElevation = 6.dp,
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize(),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    val av = assistant.avatar
-                    when (av) {
-                        is Avatar.Image -> AsyncImage(
-                            model = av.url,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-
-                        is Avatar.Emoji -> Text(
-                            text = av.content,
-                            fontSize = 44.sp,
-                            textAlign = TextAlign.Center,
-                        )
-
-                        is Avatar.Dummy -> Text(
-                            text = assistant.name
-                                .ifBlank { "A" }
-                                .firstOrNull()
-                                ?.toString()
-                                ?.uppercase()
-                                ?: "A",
-                            fontSize = 40.sp,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
+                    HeroAvatar(assistant, 92.dp)
+                    Text(
+                        text = assistant.name.ifBlank { "助手" },
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
-
-            Text(
-                text = assistant.name.ifBlank { "助手" },
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
             Text(
                 text = "Start wherever you like.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
             )
+        }
+    }
+}
+
+/** 按 Avatar 三种类型渲染圆形头像。 */
+@Composable
+private fun HeroAvatar(assistant: Assistant, size: Dp) {
+    Surface(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp,
+        shadowElevation = 6.dp,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            when (val av = assistant.avatar) {
+                is Avatar.Image -> AsyncImage(
+                    model = av.url,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+
+                is Avatar.Emoji -> Text(
+                    text = av.content,
+                    fontSize = (size.value * 0.45f).sp,
+                    textAlign = TextAlign.Center,
+                )
+
+                is Avatar.Dummy -> Text(
+                    text = assistant.name
+                        .ifBlank { "A" }
+                        .firstOrNull()
+                        ?.toString()
+                        ?.uppercase()
+                        ?: "A",
+                    fontSize = (size.value * 0.42f).sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
 
 /**
- * 可丝滑重排的功能组件 ribbon。
- * 横向滚动排列；长按/拖动任意卡片即可与其他卡片交换位置，重排过程由 reorderable 自动做位移动画。
- * 点击卡片跳转到对应真实页面。
+ * 散落在画布上、可自由丝滑拖动的玻璃组件。
+ *
+ * - 拖动任意组件即可移动到画布任意位置（跟手位移 + 拖动时缩放/高亮）。
+ * - [expanded] 为 true（空对话）时额外显示日期卡、对话卡与分页圆点，组件初始散落铺开，
+ *   更贴近参考站主页；为 false（有对话）时收拢成两行网格，位于聊天列表上方。
+ * - 点击功能组件跳转到对应真实页面。
  */
 @Composable
-fun RearrangeableFeatureWidgets(
+fun DraggableGlassWidgets(
     navController: Navigator,
     assistantId: String,
+    expanded: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    var widgets by remember(assistantId) { mutableStateOf(defaultWidgets(assistantId)) }
+    val density = LocalDensity.current
+    val widgets = remember(assistantId) { defaultGlassWidgets(assistantId) }
+    val infoCount = if (expanded) 2 else 0
+    val count = widgets.size + infoCount
 
-    val lazyListState = rememberLazyListState()
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        widgets = widgets.toMutableList().apply {
-            add(to.index, removeAt(from.index))
+    fun initialOffset(index: Int): Offset = with(density) {
+        if (expanded) {
+            when (index) {
+                0 -> Offset(14.dp.toPx(), 16.dp.toPx())
+                1 -> Offset(150.dp.toPx(), 92.dp.toPx())
+                else -> {
+                    val w = index - infoCount
+                    val col = w % 3
+                    val row = w / 3
+                    val jitter = when (w) { 1 -> 14f; 4 -> -12f; else -> 0f }
+                    Offset(
+                        (12 + col * 112 + jitter).dp.toPx(),
+                        (224 + row * 104).dp.toPx(),
+                    )
+                }
+            }
+        } else {
+            val col = index % 3
+            val row = index / 3
+            Offset(
+                (12 + col * 112).dp.toPx(),
+                (10 + row * 82).dp.toPx(),
+            )
         }
     }
 
-    LazyRow(
-        state = lazyListState,
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        items(items = widgets, key = { it.id }) { widget ->
-            ReorderableItem(
-                state = reorderableState,
-                key = widget.id,
-            ) { isDragging ->
-                val scale by animateFloatAsState(
-                    targetValue = if (isDragging) 1.08f else 1f,
-                    label = "widgetScale",
-                )
-                WidgetCard(
-                    widget = widget,
-                    isDragging = isDragging,
-                    scale = scale,
-                    onClick = { widget.navigate(navController) },
-                    modifier = Modifier.longPressDraggableHandle(),
-                )
+    // 会话内记住每个组件的位置；切换对话/状态时归位
+    val offsets = remember(expanded, assistantId) {
+        mutableStateListOf<Offset>().apply {
+            repeat(count) { add(initialOffset(it)) }
+        }
+    }
+    var draggingIndex by remember(expanded, assistantId) { mutableStateOf(-1) }
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        repeat(count) { index ->
+            val isInfo = expanded && index < infoCount
+            val widget = if (isInfo) null else widgets[index - infoCount]
+            DraggableGlassItem(
+                index = index,
+                dragging = draggingIndex == index,
+                offset = offsets[index],
+                onDragStart = { draggingIndex = index },
+                onDragEnd = { draggingIndex = -1 },
+                onDrag = { delta -> offsets[index] = offsets[index] + delta },
+            ) {
+                if (isInfo) {
+                    GlassInfoCard(index = index)
+                } else if (widget != null) {
+                    GlassWidgetChip(
+                        widget = widget,
+                        dragging = draggingIndex == index,
+                        onClick = { widget.navigate(navController) },
+                    )
+                }
+            }
+        }
+
+        if (expanded) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                repeat(5) { i ->
+                    Surface(
+                        modifier = Modifier.size(if (i == 0) 8.dp else 6.dp),
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = if (i == 0) 0.9f else 0.4f),
+                    ) {}
+                }
             }
         }
     }
 }
 
+/** 单个可拖动玻璃组件：跟手位移 + 拖动缩放动画。 */
 @Composable
-private fun WidgetCard(
-    widget: CompanionWidget,
-    isDragging: Boolean,
-    scale: Float,
+private fun DraggableGlassItem(
+    index: Int,
+    dragging: Boolean,
+    offset: Offset,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit,
+    onDrag: (Offset) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (dragging) 1.12f else 1f,
+        label = "glassWidgetScale",
+    )
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+            .scale(scale)
+            .pointerInput(index) {
+                detectDragGestures(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() },
+                ) { change, dragAmount ->
+                    change.consume()
+                    onDrag(dragAmount)
+                }
+            },
+    ) {
+        content()
+    }
+}
+
+/** 单个功能玻璃按钮（图标 + 文字）。 */
+@Composable
+private fun GlassWidgetChip(
+    widget: GlassWidget,
+    dragging: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier.scale(scale),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.82f),
-        tonalElevation = if (isDragging) 8.dp else 2.dp,
-        shadowElevation = if (isDragging) 10.dp else 2.dp,
-        border = if (isDragging) {
-            BorderStroke(
-                1.5.dp,
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-            )
-        } else {
-            null
-        },
+        shape = RoundedCornerShape(22.dp),
+        color = glassTint(),
+        border = BorderStroke(
+            if (dragging) 1.5.dp else 1.dp,
+            if (dragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else glassBorder(),
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = if (dragging) 14.dp else 4.dp,
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                .size(100.dp, 72.dp)
+                .padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
             Icon(
                 imageVector = widget.icon,
                 contentDescription = widget.label,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                modifier = Modifier.size(26.dp),
             )
             Text(
                 text = widget.label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp),
             )
         }
     }
 }
 
-/**
- * 底部停靠栏（dock）外壳：玻璃质感圆角容器，内部承载现有 ChatInput，
- * 保留 ChatInput 的全部能力（模型选择/附件/语音/联网搜索/发送），只替换外观壳。
- */
+/** 空对话画布上的装饰性玻璃信息卡（日期卡 / 对话预览卡），同样可拖动。 */
+@Composable
+private fun GlassInfoCard(index: Int) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = glassTint(),
+        border = BorderStroke(1.dp, glassBorder()),
+        tonalElevation = 0.dp,
+        shadowElevation = 4.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .size(126.dp, 76.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (index == 0) {
+                Text(
+                    text = "星期四 · 八月廿八",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                )
+                Text(
+                    text = "2026.10.08",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                )
+            } else {
+                Text(
+                    text = "对话 · 从这里开始",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                )
+                Text(
+                    text = "把想说的话，交给这里",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    maxLines = 1,
+                )
+                Text(
+                    text = "点点组件，随手摆放",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+/** 胶囊状玻璃停靠栏（dock）外壳：内部承载现有 ChatInput，只替换外观壳。 */
 @Composable
 fun CompanionDock(
     modifier: Modifier = Modifier,
@@ -358,12 +465,17 @@ fun CompanionDock(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f),
-        tonalElevation = 6.dp,
-        shadowElevation = 12.dp,
+        shape = RoundedCornerShape(32.dp),
+        color = glassTint(),
+        border = BorderStroke(1.dp, glassBorder()),
+        tonalElevation = 0.dp,
+        shadowElevation = 10.dp,
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(PaddingValues(horizontal = 4.dp, vertical = 4.dp)),
+        ) {
             content()
         }
     }

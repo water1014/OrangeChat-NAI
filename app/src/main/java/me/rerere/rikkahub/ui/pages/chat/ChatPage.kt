@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -701,17 +702,24 @@ private fun ChatPageContent(
             Column(
                 modifier = Modifier.fillMaxSize(),
             ) {
+                val hasMessages = conversation.messageNodes.isNotEmpty()
                 CompanionHeroCard(
                     assistant = setting.getCurrentAssistant(),
-                    compact = conversation.messageNodes.isNotEmpty(),
+                    compact = hasMessages,
                 )
-                RearrangeableFeatureWidgets(
+                DraggableGlassWidgets(
                     navController = navController,
                     assistantId = setting.getCurrentAssistant().id.toString(),
+                    expanded = !hasMessages,
+                    modifier = if (hasMessages) {
+                        Modifier.height(176.dp)
+                    } else {
+                        Modifier.weight(1f)
+                    },
                 )
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(if (hasMessages) 1f else 0.0001f)
                         .fillMaxWidth(),
                 ) {
                     ChatList(
