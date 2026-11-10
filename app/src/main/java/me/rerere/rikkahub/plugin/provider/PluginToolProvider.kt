@@ -37,16 +37,48 @@ class PluginToolProvider(
     }
 
     /**
+     * 生图统一走「设置 → 生图」的内置配置。
+     *
+     * naigen 插件会在 promptTemplate 里要求模型"优先调用 naigen__nai_generate"，
+     * 而插件请求带的是插件自己的一套参数，会绕过内置 NaiParams / 出图渠道。
+     * 这里把生图类插件的工具注册、提示词注入一并屏蔽，保证 AI 画图只能用
+     * 内置的 generate_image（读同一份生图设置）。
+     */
+    companion object {
+        private val BLOCKED_IMAGE_GEN_PLUGIN_IDS = setOf("com.orangechat.naigen")
+        private val BLOCKED_IMAGE_GEN_TOOL_NAMES = setOf("nai_generate")
+    }
+
+    /** 是否是需要屏蔽的生图类插件 */
+    private fun isImageGenPlugin(plugin: LoadedPlugin): Boolean {
+        val manifest = plugin.info.manifest
+        return plugin.id in BLOCKED_IMAGE_GEN_PLUGIN_IDS ||
+            manifest.id in BLOCKED_IMAGE_GEN_PLUGIN_IDS ||
+            manifest.tools.any { it.name in BLOCKED_IMAGE_GEN_TOOL_NAMES }
+    }
+
+    /** 是否是需要屏蔽的生图工具 */
+    private fun isBlockedTool(name: String): Boolean =
+        name in BLOCKED_IMAGE_GEN_TOOL_NAMES
+
+    /** 已排除生图插件的插件列表 */
+    private fun availablePlugins(): List<LoadedPlugin> =
+        pluginLoader.getAllLoadedPlugins().filterNot { isImageGenPlugin(it) }
+
+    /**
      * 获取所有插件提供的工具
      * 会等待插件初始化完成，确保竞态条件下不会返回空列表
      */
     suspend fun getTools(): List<Tool> {
         // 等待插件初始化完成，避免竞态条件导致工具列表为空
         pluginManager.awaitInitialization()
-        return pluginLoader.getAllLoadedPlugins().flatMap { plugin ->
-            plugin.info.manifest.tools.map { toolDef ->
-                createTool(plugin, toolDef)
-            }
+        // 生图只走内置设置：不注册插件的 nai_generate 等生图工具
+        return availablePlugins().flatMap { plugin ->
+            plugin.info.manifest.tools
+                .filterNot { isBlockedTool(it.name) }
+                .map { toolDef ->
+                    createTool(plugin, toolDef)
+                }
         }
     }
 
@@ -56,9 +88,12 @@ class PluginToolProvider(
     suspend fun getPluginTools(pluginId: String): List<Tool> {
         pluginManager.awaitInitialization()
         val plugin = pluginLoader.getLoadedPlugin(pluginId) ?: return emptyList()
-        return plugin.info.manifest.tools.map { toolDef ->
-            createTool(plugin, toolDef)
-        }
+        if (isImageGenPlugin(plugin)) return emptyList()
+        return plugin.info.manifest.tools
+            .filterNot { isBlockedTool(it.name) }
+            .map { toolDef ->
+                createTool(plugin, toolDef)
+            }
     }
 
     /**
@@ -169,8 +204,9 @@ class PluginToolProvider(
         // 等待插件初始化完成，避免竞态条件
         pluginManager.awaitInitialization()
 
-        val pluginsWithTools = pluginLoader.getAllLoadedPlugins()
-            .filter { it.info.manifest.tools.isNotEmpty() }
+        // 生图插件的 promptTemplate 会让模型"优先调用插件生图"，必须一并排除
+        val plugins = availablePlugins()
+        val pluginsWithTools = plugins.filter { it.info.manifest.tools.isNotEmpty() }
 
         // 只保留"主动性引导"这句话 + 插件名字列表,
         // 不再逐条重复每个工具的 name/description——完整的工具定义
@@ -185,7 +221,7 @@ class PluginToolProvider(
             null
         }
 
-        val manualTemplates = pluginLoader.getAllLoadedPlugins().mapNotNull { plugin ->
+        val manualTemplates = plugins.mapNotNull { plugin ->
             val manifest = plugin.info.manifest
             val promptTemplate = manifest.promptTemplate ?: return@mapNotNull null
             // 检查 inject_as_prompt 配置是否开启
@@ -209,7 +245,7 @@ class PluginToolProvider(
      * 获取工具统计信息
      */
     fun getToolStats(): ToolStats {
-        val plugins = pluginLoader.getAllLoadedPlugins()
+        val plugins = availablePlugins()
         val totalTools = plugins.sumOf { it.info.manifest.tools.size }
 
         return ToolStats(
