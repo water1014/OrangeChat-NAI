@@ -374,7 +374,7 @@ AI 社交动态插件，使用 Supabase 作为后端存储，附带 `supabase_sc
 
 | 项目 | 值 |
 | --- | --- |
-| 应用版本 | **2.7.3**（versionCode 176，包名 `me.rerere.orangechat.liquidglass`） |
+| 应用版本 | **2.7.4**（versionCode 177，包名 `me.rerere.orangechat.liquidglass`） |
 | 插件 `naigen` | **1.5.0**（`plugins/naigen/`，NAI-ImageGen-plugin） |
 
 ### 主要改动
